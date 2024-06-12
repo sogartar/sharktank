@@ -72,6 +72,13 @@ def sharded_elementwise_binary(
     partials = [operator(pt_x, pt_y) for pt_x, pt_y in zip(pt_xs, pt_ys)]
     return ShardedPrimitiveTensor(shard_dim=x.shard_dim, shape=x.shape, ts=partials)
 
+# Group norm.
+@group_norm_affine.override(ShardedPrimitiveTensor, Tensor, Tensor)
+def shareded_group_norm_affine(input, weight, bias, *, num_groups, eps):
+    input = unbox_tensor(input)
+    weight = unbox_tensor(weight)
+    bias = unbox_tensor(bias)
+    return F.group_norm(input, num_groups=num_groups, weight=weight, bias=bias, eps=eps)
 
 # Sharded matmuls.
 

@@ -568,7 +568,9 @@ class ShardedPrimitiveTensor(ShardedTensor):
             shard_dim_size == shape[shard_dim]
         ), f"Sharding mismatch: Sharded dims do not cover the whole volume {shard_dim_size} vs {shape[shard_dim]}"
         self._shards: tuple[DefaultPrimitiveTensor] = tuple(
-            DefaultPrimitiveTensor(name=f"{name}.shard.{i}", data=t)
+            DefaultPrimitiveTensor(name=f"{name}.shard.{i}",
+                                   data=ops.iree.transfer_to_logical_device(f"{i}", t),
+                                   )
             for i, t in enumerate(ts)
         )
 
