@@ -12,6 +12,46 @@ from ..types import InferenceTensor, ShardedPrimitiveTensor
 from ._registry import unbox_tensor
 from .signatures import *
 
+# conv2d
+
+
+@conv2d.override(
+    Tensor, ShardedPrimitiveTensor, ShardedPrimitiveTensor, auto_dequant=True
+)
+def sharded_conv2d_with_bias(
+    input: Tensor,
+    weight: ShardedPrimitiveTensor,
+    bias: ShardedPrimitiveTensor,
+    *,
+    stride,
+    padding,
+    dilation,
+    groups,
+):
+    assert weight.shard_count == bias.shard_count
+
+    # Output channels dimension is sharded.
+    if weight.shard_dim == 0 and groups == 1:
+        assert bias.shard_dim == 0
+        shards = [
+            conv2d(
+                input,
+                w,
+                b,
+                stride=stride,
+                padding=padding,
+                dilation=dilation,
+                groups=groups,
+            )
+            for w, b in zip(weight.shards, bias.shards)
+        ]
+        shape = list(shards[0].shape)
+        shape[1] = shape[1] * weight.shard_count  # Output channels dim
+        return ShardedPrimitiveTensor(shard_dim=1, ts=shards, shape=shape)
+    else:
+        assert False and "TODO"
+
+
 # Sharded elementwise.
 
 

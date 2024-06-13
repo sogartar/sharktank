@@ -12,6 +12,60 @@ from sharktank import ops
 from sharktank.types import *
 
 
+class ConvTest(unittest.TestCase):
+    def testCov2dShardedOutputChannelsOneGroup(self):
+        batches = 2
+        in_channels = 6
+        out_channels = 12
+        groups = 1
+        height = 17
+        width = 19
+        stride = 2
+        padding = 3
+        dilation = 2
+        kernel_height = 3
+        kernel_width = 4
+        x = torch.rand(batches, in_channels, height, width, dtype=torch.float32)
+        weight = torch.rand(
+            out_channels,
+            in_channels // groups,
+            kernel_height,
+            kernel_width,
+            dtype=torch.float32,
+        )
+        bias = torch.rand(out_channels, dtype=torch.float32)
+
+        expected_result = ops.conv2d(
+            x,
+            weight=weight,
+            bias=bias,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            groups=groups,
+        )
+
+        shard_count = 2
+        weight_sharded = ShardedPrimitiveTensor(
+            shard_dim=0, ts=weight, shard_count=shard_count
+        )
+        bias_sharded = ShardedPrimitiveTensor(
+            shard_dim=0, ts=bias, shard_count=shard_count
+        )
+        sharded_result = ops.conv2d(
+            x,
+            weight=weight_sharded,
+            bias=bias_sharded,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            groups=groups,
+        )
+        actual_result = ops.sharded_cat(sharded_result)
+
+        torch.testing.assert_close(actual_result, expected_result)
+
+
 class MatmulTest(unittest.TestCase):
     def testTorchRHSColumnShardedTransposed(self):
         t1 = torch.rand(4, 32, 16, dtype=torch.float32)
