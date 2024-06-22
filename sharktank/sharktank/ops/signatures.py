@@ -11,6 +11,7 @@ from typing import Optional, Sequence, Union, List
 import torch
 import numbers
 from torch import Tensor, dtype
+from ..types import ShardedTensor
 
 from ._registry import *
 
@@ -25,6 +26,9 @@ __all__ = [
     "matmul",
     "permute",
     "rms_norm",
+    "replicate",
+    "shard",
+    "shard_like",
     "sharded_cat",
     "sharded_sum",
 ]
@@ -309,6 +313,72 @@ def _rms_norm_trampoline(
     tensors = (x, weight)
     for override in d.find_overrides(tensors):
         result = override(x, weight, epsilon=epsilon)
+        if result is not NotImplemented:
+            return override, result
+    else:
+        d.fail(tensors)
+
+
+@overridable
+def replicate(input: AnyTensor, count: int) -> ShardedTensor:
+    """Replicate across devices.
+
+    Possibly resharding if required."""
+    ...
+
+
+@replicate.trampoline
+def _replicate_trampoline(
+    d: SignatureDispatcher, input: AnyTensor, count: int
+) -> ShardedTensor:
+    tensors = (input,)
+    for override in d.find_overrides(tensors):
+        result = override(input, count=count)
+        if result is not NotImplemented:
+            return override, result
+    else:
+        d.fail(tensors)
+
+
+@overridable
+def shard(input: AnyTensor, *, dim: int, count: int) -> ShardedTensor:
+    """Shard `input` along `dim`.
+
+    Possibly resharding if required."""
+    ...
+
+
+@shard.trampoline
+def _shard_trampoline(
+    d: SignatureDispatcher, input: AnyTensor, dim: int, count: int
+) -> ShardedTensor:
+    tensors = (input,)
+    for override in d.find_overrides(tensors):
+        result = override(input, dim=dim, count=count)
+        if result is not NotImplemented:
+            return override, result
+    else:
+        d.fail(tensors)
+
+
+@overridable
+def shard_like(input: AnyTensor, like: AnyTensor) -> AnyTensor:
+    """Shard `tensor` the same way as `like_tensor`.
+
+    This may require expensive resharding."""
+    ...
+
+
+@shard_like.trampoline
+def _shard_like_trampoline(
+    d: SignatureDispatcher, input: AnyTensor, like: AnyTensor
+) -> AnyTensor:
+    tensors = (
+        input,
+        like,
+    )
+    for override in d.find_overrides(tensors):
+        result = override(input, like)
         if result is not NotImplemented:
             return override, result
     else:

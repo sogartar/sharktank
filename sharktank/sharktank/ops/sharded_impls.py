@@ -204,6 +204,24 @@ def sharded_elementwise_binary(
     return ShardedPrimitiveTensor(shard_dim=x.shard_dim, shape=x.shape, ts=partials)
 
 
+@elementwise.override(ReplicatedTensor, ShardedPrimitiveTensor)
+def elementwise_binary_replicated_lhs_sharder_rhs(
+    operator, x: ReplicatedTensor, y: ShardedPrimitiveTensor
+):
+    assert x.shard_count == y.shard_count
+    x_sharded = shard_like(x, like=y)
+    return sharded_elementwise_binary(operator, x_sharded, y)
+
+
+@elementwise.override(ShardedPrimitiveTensor, ReplicatedTensor)
+def elementwise_binary_sharded_lhs_replicated_rhs(
+    operator, x: ReplicatedTensor, y: ShardedPrimitiveTensor
+):
+    assert x.shard_count == y.shard_count
+    y_sharded = shard_like(y, like=x)
+    return sharded_elementwise_binary(operator, x, y_sharded)
+
+
 @group_norm_affine.override(
     ShardedPrimitiveTensor, ShardedPrimitiveTensor, ShardedPrimitiveTensor
 )
@@ -357,6 +375,88 @@ def permute_sharded(tensor: ShardedPrimitiveTensor, dims: List[int]):
     permuted_shards = [permute(shard, dims) for shard in tensor.shards]
     permuted_shard_dim = dims[tensor.shard_dim]
     return ShardedPrimitiveTensor(ts=permuted_shards, shard_dim=permuted_shard_dim)
+
+
+@replicate.override(Tensor)
+def replicate_tensor(input, *, count: int) -> ReplicatedTensor:
+    torch_input = unbox_tensor(input)
+    return ReplicatedTensor(ts=torch_input, shard_count=count)
+
+
+@replicate.override(ReplicatedTensor)
+def replicate_tensor(input: ReplicatedTensor, *, count: int) -> ReplicatedTensor:
+    assert input.shard_count == count
+    return input
+
+
+@shard.override(Tensor)
+def shard_tensor(input, *, dim: int, count: int) -> ShardedPrimitiveTensor:
+    torch_input = unbox_tensor(input)
+    return ShardedPrimitiveTensor(ts=torch_input, shard_dim=dim, shard_count=count)
+
+
+@shard.override(ShardedPrimitiveTensor)
+def shard_sharded(
+    input: ShardedPrimitiveTensor, *, dim: int, count: int
+) -> ShardedPrimitiveTensor:
+    assert input.shard_dim == dim and input.shard_count == count
+    return input
+
+
+@shard.override(ReplicatedTensor)
+def shard_replicated(
+    input: ReplicatedTensor, *, dim: int, count: int
+) -> ShardedPrimitiveTensor:
+    assert input.shard_count == count
+
+    def slice_range_along_dim(dim: int, start: int, end: int):
+        res = slice(None) * len(input.shape)
+        res[dim] = slice(start, end)
+
+    shard_size_along_dim = input.shape[dim] // count
+    shards = [
+        shard[
+            slice_range_along_dim(
+                dim=dim,
+                start=shard_idx * shard_size_along_dim,
+                end=(shard_idx + 1) * shard_size_along_dim,
+            )
+        ]
+        for shard_idx, shard in enumerate(input.shards)
+    ]
+    res = ShardedPrimitiveTensor(ts=shards, shard_dim=dim)
+
+
+@shard_like.override(Tensor, ShardedPrimitiveTensor)
+def shard_like_sharded_rhs(
+    input, like: ShardedPrimitiveTensor
+) -> ShardedPrimitiveTensor:
+    torch_input = unbox_tensor(input)
+    return ShardedPrimitiveTensor(ts=torch_input, shard_dim=like.shard_dim)
+
+
+@shard_like.override(Tensor, ReplicatedTensor)
+def shard_like_replicated_rhs(tensor, like: ReplicatedTensor) -> ReplicatedTensor:
+    torch_tensor = unbox_tensor(tensor)
+    return ReplicatedTensor(ts=torch_tensor, shard_count=like.shard_count)
+
+
+@shard_like.override(ReplicatedTensor, ReplicatedTensor)
+def shard_like_replicated_lhs_and_rhs(
+    tensor: ReplicatedTensor, like: ReplicatedTensor
+) -> ReplicatedTensor:
+    assert tensor.shard_count == like.shard_count
+    return tensor
+
+
+@shard_like.override(ShardedPrimitiveTensor, ShardedPrimitiveTensor)
+def shard_like_sharded_lhs_and_rhs(
+    tensor: ShardedPrimitiveTensor, like: ShardedPrimitiveTensor
+) -> ShardedPrimitiveTensor:
+    assert (
+        tensor.shard_count == like.shard_count and tensor.shard_dim == like.shard_dim
+    ), "Resharding is not supported"
+    return tensor
 
 
 # Sharded sum.
