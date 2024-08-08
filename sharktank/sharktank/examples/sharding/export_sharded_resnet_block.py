@@ -18,9 +18,46 @@ from sharktank.models.punet.sharding import ResnetBlock2DSplitOutputChannelsShar
 from sharktank import ops
 from sharktank.types import *
 import iree.runtime
+import iree.compiler
 import argparse
+from typing import List
+import os
+import logging
 
+logger = logging.getLogger(__name__)
 vm_context: iree.runtime.VmContext = None
+
+
+def get_compiler_args(target_device_driver: str, shard_count: int) -> List[str]:
+    result = ["--iree-rocm-target-chip=gfx942"]
+    for i in range(shard_count):
+        result.append(
+            f"--iree-hal-target-device={target_device_driver}[{i}]",
+        )
+    return result
+
+
+def compile_iree_module(
+    export_output: aot.ExportOutput, module_path: str, shard_count: int
+):
+    export_output.session.set_flags(
+        *get_compiler_args(target_device_driver="hip", shard_count=shard_count)
+    )
+    logger.info(f"Compiling module with flags: {export_output.session.get_flags()}")
+    export_output.compile(save_to=module_path, target_backends=None)
+
+
+def compile_iree_module_with_cli(source_path: str, module_path: str, shard_count: int):
+    compiler_args = get_compiler_args(
+        target_device_driver="hip", shard_count=shard_count
+    )
+    logger.info(f"Compiling module with flags: {compiler_args}")
+    iree.compiler.compile_file(
+        source_path,
+        input_type=iree.compiler.InputType.TORCH,
+        output_file=module_path,
+        extra_args=compiler_args,
+    )
 
 
 def run_iree_module(
@@ -29,7 +66,7 @@ def run_iree_module(
     module_path: str,
     parameters_path: str,
 ) -> ShardedTensor:
-    # system_context = iree.runtime.SystemContext(iree.runtime.Config("rocm"))
+    logger.info(f"Running module.")
     hal_driver = iree.runtime.get_driver("hip")
     vm_instance = iree.runtime.VmInstance()
     available_devices = hal_driver.query_available_devices()
@@ -56,11 +93,12 @@ def run_iree_module(
 
     # The context needs to be destroied after the buffers, although
     # it is not associate with them on the API level.
+    logger.info(f"Creating VM context.")
     global vm_context
     vm_context = iree.runtime.VmContext(
         instance=vm_instance, modules=(hal_module, parameters_module, vm_module)
     )
-    print(f"VM context created.")
+    logger.info(f"VM context created.")
     module_input_args = [
         iree.runtime.asdevicearray(
             devices[0], sharded_input_image.shards[0].as_torch().to("cpu").numpy()
@@ -75,17 +113,17 @@ def run_iree_module(
             devices[1], sharded_input_time_emb.shards[1].as_torch().to("cpu").numpy()
         ),
     ]
-    print(f"args copied to devices.")
+    logger.info(f"args copied to devices.")
     vm_function = vm_module.lookup_function("main")
-    print(f"main found.")
+    logger.info(f"main found.")
     invoker = iree.runtime.FunctionInvoker(
         vm_context=vm_context,
         device=devices[0],
         vm_function=vm_function,
     )
-    print(f"Invoking main.")
+    logger.info(f"Invoking main.")
     results = invoker(*module_input_args)
-    print(f"Invoking main done.")
+    logger.info(f"Invoking main done.")
     shards = [torch.tensor(tensor.to_host()) for tensor in results]
     return SplitPrimitiveTensor(ts=shards, shard_dim=1)
 
@@ -101,6 +139,12 @@ def main(argv):
     parser.add_argument(
         "--parameters", type=Path, required=True, help="Exported model parameters."
     )
+    parser.add_argument(
+        "--caching",
+        action="store_true",
+        default=False,
+        help="Load chached results if presnet instead of recomputing.",
+    )
     args = cli.parse(parser, args=argv)
 
     torch.set_default_dtype(torch.float32)
@@ -115,14 +159,7 @@ def main(argv):
     norm_groups = 2
     eps = 0.01
     shard_count = 2
-    theta = make_resnet_block_2d_theta(
-        in_channels=in_channels,
-        out_channels=out_channels,
-        kernel_height=kernel_height,
-        kernel_width=kernel_width,
-        input_time_emb_channels=input_time_emb_shape[1],
-    )
-    theta.rename_tensors_to_paths()
+
     input_image = torch.rand(
         batches,
         in_channels,
@@ -131,13 +168,26 @@ def main(argv):
     )
     input_time_emb = torch.rand(input_time_emb_shape)
 
-    sharding_spec = ResnetBlock2DSplitOutputChannelsSharding(shard_count=shard_count)
-    sharded_theta = ops.reshard(theta, sharding_spec)
+    if not args.caching or not os.path.exists(args.parameters):
+        theta = make_resnet_block_2d_theta(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_height=kernel_height,
+            kernel_width=kernel_width,
+            input_time_emb_channels=input_time_emb_shape[1],
+        )
+        theta.rename_tensors_to_paths()
 
-    # Roundtrip the dataset, which anchors the tensors as parameters to be loaded
-    # vs constants to be frozen (TODO: This is a bit wonky).
-    ds = Dataset({}, sharded_theta)
-    ds.save(args.parameters)
+        sharding_spec = ResnetBlock2DSplitOutputChannelsSharding(
+            shard_count=shard_count
+        )
+        sharded_theta = ops.reshard(theta, sharding_spec)
+
+        # Roundtrip the dataset, which anchors the tensors as parameters to be loaded
+        # vs constants to be frozen (TODO: This is a bit wonky).
+        ds = Dataset({}, sharded_theta)
+        ds.save(args.parameters)
+
     ds = Dataset.load(args.parameters)
 
     sharded_resnet_block = ResnetBlock2D(
@@ -154,23 +204,19 @@ def main(argv):
     sharded_input_time_emb = ops.replicate(input_time_emb, count=shard_count)
     expected_result = sharded_resnet_block(sharded_input_image, sharded_input_time_emb)
 
-    exported_resnet_block = aot.export(
-        sharded_resnet_block,
-        args=(
-            sharded_input_image,
-            sharded_input_time_emb,
-        ),
-    )
-    exported_resnet_block.save_mlir(args.mlir)
-    target_backend = "hip"
-    for i in range(shard_count):
-        exported_resnet_block.session.set_flags(
-            f"--iree-hal-target-device={target_backend}[{i}]",
-            "--iree-rocm-target-chip=gfx942",
+    if not args.caching or not os.path.exists(args.module):
+        exported_resnet_block = aot.export(
+            sharded_resnet_block,
+            args=(
+                sharded_input_image,
+                sharded_input_time_emb,
+            ),
         )
+        exported_resnet_block.save_mlir(args.mlir)
 
-    print("Compiling module ...")
-    exported_resnet_block.compile(save_to=args.module, target_backends=None)
+        compile_iree_module_with_cli(
+            source_path=args.mlir, module_path=args.module, shard_count=shard_count
+        )
 
     actual_result = run_iree_module(
         sharded_input_image=sharded_input_image,
@@ -187,4 +233,5 @@ def main(argv):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.DEBUG, force=True)
     main(sys.argv[1:])
