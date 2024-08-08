@@ -28,12 +28,11 @@ logger = logging.getLogger(__name__)
 vm_context: iree.runtime.VmContext = None
 
 
-def get_compiler_args(target_device_driver: str, shard_count: int) -> List[str]:
-    result = ["--iree-rocm-target-chip=gfx942"]
-    for i in range(shard_count):
-        result.append(
-            f"--iree-hal-target-device={target_device_driver}[{i}]",
-        )
+def get_compiler_args(target_device_kind: str, shard_count: int) -> List[str]:
+    result = [
+        f"--iree-hal-target-device={target_device_kind}[{i}]"
+        for i in range(shard_count)
+    ]
     return result
 
 
@@ -41,15 +40,16 @@ def compile_iree_module(
     export_output: aot.ExportOutput, module_path: str, shard_count: int
 ):
     export_output.session.set_flags(
-        *get_compiler_args(target_device_driver="hip", shard_count=shard_count)
+        *get_compiler_args(target_device_kind="llvm-cpu", shard_count=shard_count)
     )
     logger.info(f"Compiling module with flags: {export_output.session.get_flags()}")
     export_output.compile(save_to=module_path, target_backends=None)
 
 
+# TODO: remove. It seems that aot.ExportOutput is able to complie the model now.
 def compile_iree_module_with_cli(source_path: str, module_path: str, shard_count: int):
     compiler_args = get_compiler_args(
-        target_device_driver="hip", shard_count=shard_count
+        target_device_kind="llvm-cpu", shard_count=shard_count
     )
     logger.info(f"Compiling module with flags: {compiler_args}")
     iree.compiler.compile_file(
@@ -67,23 +67,24 @@ def run_iree_module(
     parameters_path: str,
 ) -> ShardedTensor:
     logger.info(f"Running module.")
-    hal_driver = iree.runtime.get_driver("hip")
+    hal_driver = iree.runtime.get_driver("local-task")
     vm_instance = iree.runtime.VmInstance()
     available_devices = hal_driver.query_available_devices()
-    assert len(available_devices) > 2
     devices = [
         hal_driver.create_device(available_devices[0]),
-        hal_driver.create_device(available_devices[1]),
+        hal_driver.create_device(available_devices[0]),
     ]
     hal_module = iree.runtime.create_hal_module(instance=vm_instance, devices=devices)
     params_path = Path(parameters_path)
+    # TODO: make IREE able to load the parameters from the top parameter file
+    # without having to specify the parameter file for each shard separately.
     parameter_index = iree.runtime.ParameterIndex()
-    parameter_index.load(
-        file_path=str(Path(params_path).with_suffix(f".rank{0}{params_path.suffix}"))
-    )
-    parameter_index.load(
-        file_path=str(Path(params_path).with_suffix(f".rank{1}{params_path.suffix}"))
-    )
+    for i in len(sharded_input_image.shard_count):
+        parameter_index.load(
+            file_path=str(
+                Path(params_path).with_suffix(f".rank{i}{params_path.suffix}")
+            )
+        )
     parameter_provider = parameter_index.create_provider(scope="model")
     parameters_module = iree.runtime.create_io_parameters_module(
         vm_instance, parameter_provider
@@ -185,13 +186,13 @@ def main(argv):
 
         # Roundtrip the dataset, which anchors the tensors as parameters to be loaded
         # vs constants to be frozen (TODO: This is a bit wonky).
-        ds = Dataset({}, sharded_theta)
-        ds.save(args.parameters)
+        sharded_dataset = Dataset({}, sharded_theta)
+        sharded_dataset.save(args.parameters)
 
-    ds = Dataset.load(args.parameters)
+    sharded_dataset = Dataset.load(args.parameters)
 
     sharded_resnet_block = ResnetBlock2D(
-        theta=ds.root_theta,
+        theta=sharded_dataset.root_theta,
         groups=norm_groups,
         eps=eps,
         non_linearity="relu",
@@ -204,6 +205,21 @@ def main(argv):
     sharded_input_time_emb = ops.replicate(input_time_emb, count=shard_count)
     expected_result = sharded_resnet_block(sharded_input_image, sharded_input_time_emb)
 
+    # Verify as a sanity check that the sharded torch model matches the result
+    # of the unsharded torch model.
+    unsharded_resnet_block = ResnetBlock2D(
+        theta=theta,
+        groups=norm_groups,
+        eps=eps,
+        non_linearity="relu",
+        output_scale_factor=None,
+        dropout=0.0,
+        temb_channels=input_time_emb_shape[1],
+        time_embedding_norm="default",
+    )
+    unsharded_result = unsharded_resnet_block(input_image, input_time_emb)
+    torch.testing.assert_close(unsharded_result, ops.unshard(expected_result))
+
     if not args.caching or not os.path.exists(args.module):
         exported_resnet_block = aot.export(
             sharded_resnet_block,
@@ -214,9 +230,14 @@ def main(argv):
         )
         exported_resnet_block.save_mlir(args.mlir)
 
-        compile_iree_module_with_cli(
-            source_path=args.mlir, module_path=args.module, shard_count=shard_count
+        compile_iree_module(
+            export_output=exported_resnet_block,
+            module_path=args.module,
+            shard_count=shard_count,
         )
+        # compile_iree_module_with_cli(
+        #     source_path=str(args.mlir), module_path=args.module, shard_count=shard_count
+        # )
 
     actual_result = run_iree_module(
         sharded_input_image=sharded_input_image,
@@ -224,6 +245,7 @@ def main(argv):
         module_path=args.module,
         parameters_path=args.parameters,
     )
+    assert len(actual_result.shards) == len(expected_result.shards)
     for actual_shard, expected_shard in zip(
         actual_result.shards, expected_result.shards
     ):
