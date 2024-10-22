@@ -210,7 +210,7 @@ def elementwise(operator, *args, **kwargs) -> AnyTensor:
 def _elementwise_trampoline(d: SignatureDispatcher, operator, *args, **kwargs):
     tensors = []
     for a in args:
-        if isinstance(a, (Tensor, InferenceTensor)):
+        if isinstance(a, (Tensor, InferenceTensor, Number)):
             tensors.append(a)
         else:
             break

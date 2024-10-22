@@ -6,13 +6,24 @@
 
 import unittest
 from parameterized import parameterized
-
+import tempfile
+import pytest
+from copy import deepcopy
 import torch
 
 from sharktank import ops
 from sharktank.types import *
 from sharktank.types import sharding
 from sharktank.layers import Conv2DLayer
+from sharktank.utils.iree import (
+    get_iree_devices,
+    load_iree_module,
+    run_iree_module_function,
+    prepare_iree_module_function_args,
+    call_torch_module_function,
+    iree_to_torch,
+)
+from iree.turbine.aot import FxProgramsBuilder, export
 
 
 class AllGatherTest(unittest.TestCase):
@@ -233,6 +244,7 @@ class ConvTest(unittest.TestCase):
         assert ops.equal(expected_result, actual_result)
 
 
+@pytest.mark.usefixtures("path_prefix")
 class ElementwiseTest(unittest.TestCase):
     def testRhsAndLhsShardedAdd(self):
         a = torch.rand(4, 5, 6, dtype=torch.float32)
@@ -311,6 +323,82 @@ class ElementwiseTest(unittest.TestCase):
         assert sharded_result.shard_count == sharded_a.shard_count
         assert sharded_result.shard_dim == sharded_a.shard_dim
         actual_result = ops.reshard_like(sharded_result, expected_result)
+        torch.testing.assert_close(actual_result, expected_result)
+
+    def testInPlaceAddWithIree(self):
+        if self.path_prefix is not None:
+            self.runTestInPlaceAddWithIree(
+                path_prefix=self.path_prefix, dump_enabled=True
+            )
+        else:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                self.runTestInPlaceUpdate(
+                    path_prefix=f"{temp_dir}/", dump_enabled=False
+                )
+
+    def runTestInPlaceAddWithIree(self, path_prefix: str, dump_enabled: bool):
+        dtype = torch.float32
+
+        class Module(torch.nn.Module):
+            def main(self, tensor: torch.Tensor) -> torch.Tensor:
+                tensor += 1
+                # TODO: figure out why when not returning anything the export fails.
+                return torch.empty([1], dtype=dtype)
+
+        tensor = torch.tensor([1, 2, 3], dtype=dtype)
+        expected_result = torch.tensor([2, 3, 4], dtype=dtype)
+
+        module = Module()
+        fxb = FxProgramsBuilder(module)
+
+        @fxb.export_program(
+            args=(tensor,),
+            name="main",
+            strict=False,
+        )
+        def _(model, *args, **kwargs):
+            return model.main(*args, **kwargs)
+
+        if dump_enabled:
+            for program_name, ep in fxb.programs.items():
+                with open(
+                    f"{path_prefix}{program_name}.torch.fx.txt",
+                    "w",
+                ) as f:
+                    print(str(ep), file=f)
+
+        output = export(fxb)
+        if dump_enabled:
+            output.save_mlir(f"{path_prefix}program.mlir")
+
+        iree_module_path = f"{path_prefix}program.vmfb"
+        output.session.set_flags("--iree-hal-target-device=llvm-cpu")
+        output.compile(
+            save_to=iree_module_path,
+            target_backends=None,
+        )
+
+        iree_driver = "local-task"
+        iree_devices = get_iree_devices(
+            driver=iree_driver,
+            device_count=1,
+        )
+        iree_module, vm_context, vm_instance = load_iree_module(
+            module_path=iree_module_path,
+            devices=iree_devices,
+        )
+        iree_args = prepare_iree_module_function_args(
+            args=[deepcopy(tensor)], devices=iree_devices
+        )
+        run_iree_module_function(
+            args=iree_args,
+            function_name="main",
+            module=iree_module,
+            vm_context=vm_context,
+            driver=iree_driver,
+            trace_path_prefix=path_prefix if dump_enabled else None,
+        )
+        actual_result = iree_to_torch(*iree_args)[0]
         torch.testing.assert_close(actual_result, expected_result)
 
 
@@ -786,9 +874,9 @@ class ReplicateTest(unittest.TestCase):
         expected_result = ReplicatedTensor(ts=tensor, shard_count=shard_count)
         assert expected_result.is_deep_equal(actual_result)
 
-        # Test not a copy.
+        # Test that is a copy.
         tensor[...] = torch.rand_like(tensor)
-        assert all(ops.equal(tensor, shard) for shard in actual_result.shards)
+        assert all(not ops.equal(tensor, shard) for shard in actual_result.shards)
 
 
 class ReshapeTest(unittest.TestCase):
@@ -905,10 +993,10 @@ class ReshardSplitTest(unittest.TestCase):
         )
         assert expected_result.is_deep_equal(actual_result)
 
-        # Test not a copy.
+        # Test that is a copy.
         tensor[...] = torch.rand_like(tensor)
         result_split2 = ops.reshard_split(tensor, dim=shard_dim, count=shard_count)
-        assert ops.equal(actual_result, result_split2)
+        assert not ops.equal(actual_result, result_split2)
 
     def testReshardSharded(self):
         tensor = torch.rand(4, 5, 6, dtype=torch.float32)
