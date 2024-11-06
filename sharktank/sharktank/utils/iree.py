@@ -21,6 +21,8 @@ from ..types.tensors import (
     torch_tree_flatten,
 )
 from .tree import Tree
+from . import debugging
+import traceback
 
 
 def get_iree_devices(driver: str, device_count: int) -> List[iree.runtime.HalDevice]:
@@ -41,11 +43,23 @@ def load_iree_module(
     module_path: str,
     devices: List[iree.runtime.HalDevice],
     parameters_path: Optional[str] = None,
+    trace_tensors_callback: Optional[
+        "iree.runtime.HalModuleBufferViewTraceCallback"
+    ] = None,
 ) -> Tuple[iree.runtime.VmModule, iree.runtime.VmContext, iree.runtime.VmInstance]:
     """The VmContext and VmInstance need to outlive the VmModule and any device
     buffers."""
+    if trace_tensors_callback is None:
+        trace_tensors_callback = make_trace_tensors_callback()
+
     vm_instance = iree.runtime.VmInstance()
-    hal_module = iree.runtime.create_hal_module(instance=vm_instance, devices=devices)
+    hal_module = iree.runtime.create_hal_module(
+        instance=vm_instance,
+        devices=devices,
+        debug_sink=iree.runtime.HalModuleDebugSink(
+            buffer_view_trace_callback=trace_tensors_callback
+        ),
+    )
     modules = [hal_module]
     if parameters_path is not None:
         params_path = Path(parameters_path)
@@ -198,3 +212,20 @@ def call_torch_module_function(
 
 def iree_to_torch(*tensors: iree.runtime.DeviceArray) -> List[torch.Tensor]:
     return [torch.tensor(deepcopy(tensor)) for tensor in tensors]
+
+
+def buffer_view_to_torch(buffer_view: iree.runtime.HalBufferView) -> torch.Tensor:
+    return torch.from_numpy(
+        buffer_view.map().asarray(
+            buffer_view.shape,
+            iree.runtime.HalElementType.map_to_dtype(buffer_view.element_type),
+        )
+    )
+
+
+def make_trace_tensors_callback() -> "iree.runtime.HalModuleBufferViewTraceCallback":
+    def fn(key: str, buffer_views: list[iree.runtime.HalBufferView]):
+        tensors = [buffer_view_to_torch(buffer_view) for buffer_view in buffer_views]
+        debugging.default_trace_tensors_callback(key, *tensors)
+
+    return fn

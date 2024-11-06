@@ -11,6 +11,7 @@ import functools
 import os
 import pytest
 import torch
+from pathlib import Path
 
 from sharktank.examples import export_paged_llm_v1
 from sharktank.examples.sharding import shard_llm_dataset
@@ -36,6 +37,7 @@ from sharktank.utils.iree import (
 from sharktank.utils.testing import PathPrefixTestBase, ModuloTokenizer, longrun
 from sharktank.utils.tokenizer import load_tokenizer, InferenceTokenizer
 import sharktank.ops as ops
+from sharktank.utils import debugging
 
 
 AnyTokenizer = Any
@@ -157,11 +159,13 @@ def assert_close_post_call(
 
 
 def compare_models(
+    path_prefix: str,
     target_model: CausalLMModelABC,
     reference_model: CausalLMModelABC,
     tokenizer: InferenceTokenizer,
     cache_page_count: int,
     prompts: list[str],
+    tensor_tracing_enabled: bool,
 ):
     generator = TorchGenerator(
         target_model, tokenizer, page_cache_size=cache_page_count
@@ -188,8 +192,18 @@ def compare_models(
         unsharded_reference_cache_state
     )[0]
 
+    if tensor_tracing_enabled:
+        debugging.flags.save_goldens_path = Path(f"{path_prefix}/trace/target/prefill")
+        os.makedirs(debugging.flags.save_goldens_path, exist_ok=True)
     batch.prefill()
+
+    if tensor_tracing_enabled:
+        debugging.flags.save_goldens_path = Path(
+            f"{path_prefix}/trace/reference/prefill"
+        )
+        os.makedirs(debugging.flags.save_goldens_path, exist_ok=True)
     reference_batch.prefill()
+
     assert_close_post_call(
         actual_logits=batch.logits,
         expected_logits=reference_batch.logits,
@@ -197,8 +211,18 @@ def compare_models(
         expected_cache_state=reference_batch.cache_state,
     )
 
+    if tensor_tracing_enabled:
+        debugging.flags.save_goldens_path = Path(f"{path_prefix}/trace/target/decode")
+        os.makedirs(debugging.flags.save_goldens_path, exist_ok=True)
     batch.decode()
+
+    if tensor_tracing_enabled:
+        debugging.flags.save_goldens_path = Path(
+            f"{path_prefix}/trace/reference/decode"
+        )
+        os.makedirs(debugging.flags.save_goldens_path, exist_ok=True)
     reference_batch.decode()
+
     assert_close_post_call(
         actual_logits=batch.logits,
         expected_logits=reference_batch.logits,
@@ -219,6 +243,7 @@ def run_test_compare_iree_against_torch(
     tokenizer: InferenceTokenizer,
     prompts: list[str],
     cache_page_count: int,
+    tensor_tracing_enabled: bool,
 ):
     iree_module_path = f"{path_prefix}program.vmfb"
     compile_iree_module(
@@ -253,15 +278,17 @@ def run_test_compare_iree_against_torch(
     torch_model = PagedLlamaModelV1(theta=torch_dataset.root_theta, config=torch_config)
 
     compare_models(
+        path_prefix=path_prefix,
         target_model=iree_model,
         reference_model=torch_model,
         tokenizer=tokenizer,
         cache_page_count=cache_page_count,
         prompts=prompts,
+        tensor_tracing_enabled=tensor_tracing_enabled,
     )
 
 
-@pytest.mark.usefixtures("caching")
+@pytest.mark.usefixtures("caching", "tensor_tracing_enabled")
 class ShardedLlamaTestBase(PathPrefixTestBase):
     def setUp(self):
         super().setUp()
@@ -338,11 +365,13 @@ class ShardedLlamaToySizedTest(ShardedLlamaTestBase):
         sharded_model = PagedLlamaModelV1(sharded_theta, self.sharded_config)
         reference_model = PagedLlamaModelV1(self.theta, self.config)
         compare_models(
+            path_prefix=self.path_prefix,
             target_model=sharded_model,
             reference_model=reference_model,
             tokenizer=self.tokenizer,
             prompts=self.prompts,
             cache_page_count=self.cache_page_count,
+            tensor_tracing_enabled=self.tensor_tracing_enabled,
         )
 
     def testCompareTensorParallelWithIreeToUnsharded(self):
@@ -390,6 +419,7 @@ class ShardedLlamaToySizedTest(ShardedLlamaTestBase):
             tokenizer=self.tokenizer,
             prompts=self.prompts,
             cache_page_count=self.cache_page_count,
+            tensor_tracing_enabled=self.tensor_tracing_enabled,
         )
 
 
@@ -464,4 +494,5 @@ class Llama38BFp16Tp8Test(ShardedLlamaTestBase):
             tokenizer=self.tokenizer,
             prompts=self.prompts,
             cache_page_count=self.cache_page_count,
+            tensor_tracing_enabled=self.tensor_tracing_enabled,
         )

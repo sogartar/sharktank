@@ -441,7 +441,7 @@ def to_default(tensor: Tensor, *args, **kwargs):
 def trace_tensors(key: str, *tensors: tuple[AnyTensor]):
     if len(tensors) != 1:
         raise ValueError("Tracing more than one tensor at a time is not supported.")
-    iree.turbine.ops.iree.trace_tensor(key, unshard(tensors[0]))
+    iree.turbine.ops.iree.trace_tensor(key, unbox_tensor(unshard(tensors[0])))
 
 
 @transfer_to_logical_device.override(Tensor)

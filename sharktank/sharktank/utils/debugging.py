@@ -13,7 +13,6 @@ import os
 from pathlib import Path
 from typing import Sequence
 import iree.turbine.support.debugging
-
 import torch
 
 from .logging import get_logger
@@ -95,9 +94,20 @@ def get_trace_tensors_callback() -> Optional[TraceTensors]:
     return iree.turbine.support.debugging.trace_tensor_callback
 
 
-def default_trace_tensors_callback(key: str, *tensors: Tuple[torch.Tensor]):
-    tensors_in_dict = {f"{i}": t for i, t in enumerate(tensors)}
-    trace_tensors(key, tensors_in_dict, values=False, golden=True)
+def trace_tensors_to_npz(key: str, *tensors: Tuple[torch.Tensor]):
+    if flags.save_goldens_path is None:
+        return
+    numpy_tensors = [tensor.cpu().numpy() for tensor in tensors]
+    import numpy as np
+
+    filepath = flags.save_goldens_path / f"{key}.npz"
+    np.savez_compressed(filepath, *numpy_tensors)
+
+
+default_trace_tensors_callback = trace_tensors_to_npz
+# def default_trace_tensors_callback(key: str, *tensors: Tuple[torch.Tensor]):
+#     tensors_in_dict = {f"{i}": t for i, t in enumerate(tensors)}
+#     trace_tensors(key, tensors_in_dict, values=False, golden=True)
 
 
 set_trace_tensors_callback(default_trace_tensors_callback)

@@ -160,6 +160,13 @@ def pytest_addoption(parser):
         help="Batch size for mlir export",
     )
 
+    parser.addoption(
+        "--tensor-tracing-enabled",
+        action="store_true",
+        default=False,
+        help="Trace tensors during test execution.",
+    )
+
 
 def set_fixture_from_cli_option(
     request: FixtureRequest,
@@ -205,6 +212,11 @@ def tensor_parallelism_size(request: FixtureRequest) -> Optional[str]:
     return set_fixture_from_cli_option(
         request, "tensor_parallelism_size", "tensor_parallelism_size"
     )
+
+
+@pytest.fixture(scope="class")
+def tensor_tracing_enabled(request: FixtureRequest) -> Optional[bool]:
+    return set_fixture_from_cli_option(request, "tensor_tracing_enabled")
 
 
 @pytest.fixture(scope="class")

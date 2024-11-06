@@ -9,6 +9,7 @@ from typing import Dict
 import torch
 import torch.nn as nn
 
+from .. import ops
 from ..types import (
     InferenceTensor,
     Theta,
@@ -27,7 +28,7 @@ class BaseLayer(nn.Module):
     def trace_tensor(
         self, key: str, t: torch.Tensor, *, values: bool = True, golden: bool = False
     ):
-        debugging.trace_tensor(key, t, values=values, golden=golden)
+        ops.trace_tensors(key, t)
 
     def trace_tensors(
         self,
@@ -37,13 +38,13 @@ class BaseLayer(nn.Module):
         values: bool = True,
         golden: bool = False,
     ):
-        debugging.trace_tensors(key, tensors, values=values, golden=golden)
+        ops.trace_tensors(key, *tensors.values())
 
     def trace_golden(self, key: str, t: torch.Tensor):
-        debugging.trace_tensor(key, t, golden=True)
+        ops.trace_tensors(key, t)
 
     def trace_goldens(self, key: str, tensors: Dict[str, torch.Tensor]):
-        debugging.trace_tensors(key, tensors, golden=True)
+        ops.trace_tensors(key, *tensors.values())
 
     def assert_not_nan(self, *ts: torch.Tensor):
         """Checks whether tensors have nan values in them.
