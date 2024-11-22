@@ -165,6 +165,19 @@ def pytest_addoption(parser):
         help="Google T5 v1.1 XXL fp32 model path",
     )
 
+    # To obtain a T5 GGUF file from Black Forest Labs use
+    # git lfs install
+    # git clone git clone https://huggingface.co/black-forest-labs/FLUX.1-schnell
+    # python
+    # from sharktank.models.flux.export import convert_flux_hf_to_gguf
+    # convert_flux_hf_to_gguf(hf_model_path="FLUX.1-schnell", text_encoder_2_output_path="encoder.gguf")
+    parser.addoption(
+        "--black-forest-labs-FLUX-1-schnell-text-encoder-2-t5-v1-1-xxl-bf16-model-path",
+        type=Path,
+        default="/data/t5/xxl/black-forest-labs__FLUX.1-schnell__text_encoder_2_t5_v1_1_xxl_bf16.gguf",
+        help="Black Forest labs T5 encoder.",
+    )
+
     parser.addoption(
         "--baseline-perplexity-scores",
         type=Path,
@@ -297,6 +310,13 @@ def get_model_artifacts(request: FixtureRequest):
         request,
         "--google-t5-v1-1-xxl-fp32-model-path",
         "google__t5_v1_1_xxl_fp32_model",
+    )
+    model_path[
+        "black_forest_labs__FLUX_1_schnell__text_encoder_2_t5_v1_1_xxl_bf16_model_path"
+    ] = set_fixture_from_cli_option(
+        request,
+        "--black-forest-labs-FLUX-1-schnell-text-encoder-2-t5-v1-1-xxl-bf16-model-path",
+        "black_forest_labs__FLUX_1_schnell__text_encoder_2_t5_v1_1_xxl_bf16_model_path",
     )
     return model_path
 

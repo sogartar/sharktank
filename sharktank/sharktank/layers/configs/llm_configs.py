@@ -221,25 +221,33 @@ class T5Config:
 
     @staticmethod
     def from_gguf_properties(properties: dict[str, Any], **kwargs):
-        assert properties["general.architecture"] == "t5"
+        model = properties["general.architecture"]
+        assert model == "t5" or model == "t5encoder"
+
         assert (
             properties["t5.attention.layer_norm_epsilon"]
             == properties["t5.attention.layer_norm_rms_epsilon"]
         )
 
         gguf_to_config_names_map = {
-            "t5.context_length": ["context_length"],
-            "t5.embedding_length": ["d_model"],
-            "t5.feed_forward_length": ["d_ff"],
-            "t5.block_count": ["num_layers", "num_decoder_layers"],
-            "t5.attention.head_count": ["num_heads"],
-            "t5.attention.key_length": ["d_kv"],
-            "t5.attention.layer_norm_epsilon": ["layer_norm_epsilon"],
-            "t5.attention.relative_buckets_count": ["relative_attention_num_buckets"],
-            "t5.decoder_start_token_id": ["decoder_start_token_id"],
+            f"{model}.context_length": ["context_length"],
+            f"{model}.embedding_length": ["d_model"],
+            f"{model}.feed_forward_length": ["d_ff"],
+            f"{model}.block_count": ["num_layers"],
+            f"{model}.attention.head_count": ["num_heads"],
+            f"{model}.attention.key_length": ["d_kv"],
+            f"{model}.attention.layer_norm_epsilon": ["layer_norm_epsilon"],
+            f"{model}.attention.relative_buckets_count": [
+                "relative_attention_num_buckets"
+            ],
+            f"{model}.decoder_start_token_id": ["decoder_start_token_id"],
             "tokenizer.ggml.eos_token_id": ["eos_token_id"],
             "tokenizer.ggml.padding_token_id": ["pad_token_id"],
         }
+        if model == "t5":
+            gguf_to_config_names_map[f"{model}.block_count"].append(
+                "num_decoder_layers"
+            )
         all_kwargs = {"vocab_size": None, "feed_forward_proj": None}
         all_kwargs.update(
             {

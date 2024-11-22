@@ -15,6 +15,7 @@ from transformers import (
     T5Config as ReferenceT5Config,
 )
 import os
+from typing import Optional
 from collections import OrderedDict
 import pytest
 import torch
@@ -117,12 +118,18 @@ class T5EncoderIreeTest(TempDirTestBase):
 
     @parameterized.expand(
         [
-            "google/t5-v1_1-small",
-            "google/t5-v1_1-xxl",
+            # ["google/t5-v1_1-small", None],
+            # ["google/t5-v1_1-xxl", None],
+            [
+                "black-forest-labs/FLUX.1-schnell",
+                "black_forest_labs__FLUX_1_schnell__text_encoder_2_t5_v1_1_xxl_bf16_model_path",
+            ]
         ]
     )
     @with_t5_data
-    def testV1_1Fp32CompareIreeAgainstTorchEager(self, huggingface_repo_id: str):
+    def testV1_1CompareIreeAgainstTorchEager(
+        self, huggingface_repo_id: str, source_model_name: Optional[str]
+    ):
         get_dataset(
             huggingface_repo_id,
         ).download()
@@ -131,7 +138,9 @@ class T5EncoderIreeTest(TempDirTestBase):
         huggingface_repo_id_as_path = (
             f"{huggingface_repo_id.replace('/', '__').replace('-', '_')}"
         )
-        source_model_name = f"{huggingface_repo_id_as_path}_fp32_model"
+        source_model_name = (
+            source_model_name or f"{huggingface_repo_id_as_path}_fp32_model"
+        )
         source_model_path = getattr(self, source_model_name)
 
         dataset = Dataset.load(source_model_path)

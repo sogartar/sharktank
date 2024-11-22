@@ -344,6 +344,43 @@ Dataset(
     ),
 )
 
+Dataset(
+    "black-forest-labs/FLUX.1-schnell",
+    (
+        RemoteFile(
+            "config",
+            "black-forest-labs/FLUX.1-schnell",
+            "model_index.json",
+            extra_filenames=[
+                "vae/config.json",
+                "vae/diffusion_pytorch_model.safetensors",
+                "tokenizer/merges.txt",
+                "tokenizer/tokenizer_config.json",
+                "tokenizer/special_tokens_map.json",
+                "tokenizer/vocab.json",
+                "scheduler/scheduler_config.json",
+                "flux1-schnell.safetensors",
+                "ae.safetensors",
+                "transformer/config.json",
+                "transformer/diffusion_pytorch_model-00001-of-00003.safetensors",
+                "transformer/diffusion_pytorch_model-00003-of-00003.safetensors",
+                "transformer/diffusion_pytorch_model-00002-of-00003.safetensors",
+                "transformer/diffusion_pytorch_model.safetensors.index.json",
+                "text_encoder/config.json",
+                "text_encoder/model.safetensors",
+                "tokenizer_2/spiece.model",
+                "tokenizer_2/tokenizer.json",
+                "tokenizer_2/tokenizer_config.json",
+                "tokenizer_2/special_tokens_map.json",
+                "text_encoder_2/config.json",
+                "text_encoder_2/model-00002-of-00002.safetensors",
+                "text_encoder_2/model-00001-of-00002.safetensors",
+                "text_encoder_2/model.safetensors.index.json",
+            ],
+        ),
+    ),
+)
+
 ################################################################################
 # Tool entrypoint
 ################################################################################
