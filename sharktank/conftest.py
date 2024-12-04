@@ -236,7 +236,7 @@ def set_fixture_from_cli_option(
     class_attribute_name: Optional[str] = None,
 ) -> Optional[Any]:
     res = request.config.getoption(cli_option_name)
-    if request.cls is None:
+    if not hasattr(request, "cls") or request.cls is None:
         return res
     else:
         if class_attribute_name is None:
@@ -259,12 +259,12 @@ def parameters_path(request: FixtureRequest) -> Optional[Path]:
     return set_fixture_from_cli_option(request, "parameters", "parameters_path")
 
 
-@pytest.fixture(scope="class")
+@pytest.fixture(scope="module")
 def path_prefix(request: FixtureRequest) -> Optional[str]:
     return set_fixture_from_cli_option(request, "prefix", "path_prefix")
 
 
-@pytest.fixture(scope="class")
+@pytest.fixture(scope="module")
 def caching(request: FixtureRequest) -> Optional[bool]:
     return set_fixture_from_cli_option(request, "caching")
 

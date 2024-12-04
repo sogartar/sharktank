@@ -5,11 +5,15 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import functools
+import gc
+import os
 from parameterized import parameterized
 import pytest
+from shutil import rmtree
+from tempfile import mkdtemp
 import torch
 from torch.utils._pytree import tree_map
-from typing import Optional
+from typing import Optional, Generator
 from unittest import TestCase
 import transformers
 from transformers import CLIPTextModel as TransformersCLIPTextModel, CLIPTokenizer
@@ -48,21 +52,37 @@ from sharktank import ops
 with_clip_data = pytest.mark.skipif("not config.getoption('with_clip_data')")
 
 
-@pytest.mark.usefixtures("path_prefix")
-class ClipExportTest(TempDirTestBase):
-    def setUp(self):
-        super().setUp()
-        if self.path_prefix is None:
-            self.path_prefix = f"{self._temp_dir}/"
+@pytest.fixture(scope="module")
+def test_path_prefix(path_prefix: Optional[str]) -> Generator[str, None, None]:
+    result = path_prefix
 
-    @with_clip_data
-    def testSmokeExportLargeF32FromHuggingFace(self):
-        repo_id = "openai/clip-vit-large-patch14"
-        get_dataset(
-            repo_id,
-        ).download()
-        output_path = f"{self.path_prefix}{repo_id.replace('/', '--')}.irpa"
+    temp_dir = None
+    if path_prefix is None:
+        temp_dir = mkdtemp()
+        result = f"{temp_dir}/"
+
+    yield result
+
+    if temp_dir is not None:
+        gc.collect()
+        rmtree(temp_dir, ignore_errors=True)
+
+
+@pytest.fixture(scope="module")
+def clip_large_text_model_iree_parameters(test_path_prefix: str, caching: bool) -> str:
+    repo_id = "openai/clip-vit-large-patch14"
+    get_dataset(
+        repo_id,
+    ).download()
+    output_path = f"{test_path_prefix}{repo_id.replace('/', '--')}.irpa"
+    if not caching or not os.path.exists(output_path):
         export_clip_text_model_dataset_from_hugging_face(repo_id, output_path)
+    return output_path
+
+
+@with_clip_data
+def testSmokeExportLargeF32FromHuggingFace(clip_large_text_model_iree_parameters):
+    pass
 
 
 @pytest.mark.usefixtures("get_model_artifacts")
@@ -204,6 +224,26 @@ class ClipTextEagerTest(TestCase):
         torch.testing.assert_close(
             actual_outputs, expected_outputs, atol=atol, rtol=rtol
         )
+
+
+@pytest.mark.usefixtures("caching", "get_model_artifacts", "path_prefix")
+class ClipTextModelIreeTest(TempDirTestBase):
+    def setUp(self):
+        super().setUp()
+        if self.path_prefix is None:
+            self.path_prefix = f"{self._temp_dir}/"
+
+    def runTestV1_1CompareIreeAgainstTorchEager(
+        self,
+        huggingface_repo_id: str,
+        reference_dtype: torch.dtype,
+        target_dtype: torch.dtype,
+        atol: Optional[float] = None,
+    ):
+        get_dataset(
+            huggingface_repo_id,
+        ).download()
+        tokenizer: CLIPTokenizer = CLIPTokenizer.from_pretrained(huggingface_repo_id)
 
 
 class ClipAttentionTest(TestCase):
