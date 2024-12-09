@@ -72,7 +72,7 @@ from sharktank import ops
 with_clip_data = pytest.mark.skipif("not config.getoption('with_clip_data')")
 
 
-def assert_last_hidden_states_close(
+def assert_last_hidden_state_close(
     actual: torch.Tensor, expected: torch.Tensor, atol: float
 ):
     """The cosine similarity has been suggested to compare encoder states.
@@ -122,6 +122,11 @@ class ClipTextIreeTest(TempDirTestBase):
         export_clip_text_model_dataset_from_hugging_face(
             huggingface_repo_id, output_path
         )
+
+    def testSmokeExportToyIreeTestData(self):
+        from sharktank.models.clip.export_toy_text_model_iree_test_data import main
+
+        main([f"--output-path-prefix={self.path_prefix}clip_toy_text_model"])
 
     @with_clip_data
     def testCompareLargeIreeF32AgainstTorchEagerF32(self):
@@ -238,11 +243,11 @@ class ClipTextIreeTest(TempDirTestBase):
             for i in range(len(expected_outputs))
         ]
 
-        actual_last_hidden_states = actual_outputs[0]
-        expected_last_hidden_states = expected_outputs[0]
+        actual_last_hidden_state = actual_outputs[0]
+        expected_last_hidden_state = expected_outputs[0]
 
-        assert_last_hidden_states_close(
-            actual_last_hidden_states, expected_last_hidden_states, atol
+        assert_last_hidden_state_close(
+            actual_last_hidden_state, expected_last_hidden_state, atol
         )
 
     def runTestCompareRandomModelIreeAgainstTorch(
@@ -390,7 +395,7 @@ class ClipTextEagerTest(TestCase):
             actual_outputs,
         )
 
-        assert_last_hidden_states_close(
+        assert_last_hidden_state_close(
             actual_outputs["last_hidden_state"],
             expected_outputs["last_hidden_state"],
             atol=atol,
