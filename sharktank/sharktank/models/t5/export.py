@@ -7,19 +7,44 @@
 import functools
 from typing import Optional, Union
 from pathlib import Path
+from os import PathLike
 import torch
 from copy import copy
 
 from .t5 import T5Config, T5Encoder
-from ...types import Dataset
+from ...types import Dataset, Theta, torch_module_to_theta
 from ...transforms.dataset import set_float_dtype
 from iree.turbine.aot import FxProgramsBuilder, export
+import transformers
 
 __all__ = [
     "export_encoder_mlir",
     "export_encoder_iree_parameters",
-    "prune_decoder_parameters",
+    "export_encoder_to_iree",
+    "hugging_face_encoder_to_theta",
 ]
+
+
+def hugging_face_encoder_to_theta(model: transformers.CLIPTextModel) -> Theta:
+    return torch_module_to_theta(model)
+
+
+def hugging_face_encoder_to_dataset(
+    model: transformers.T5EncoderModel,
+) -> Dataset:
+    config = T5Config.from_hugging_face_config(model.config)
+    properties = config.to_properties()
+    theta = hugging_face_encoder_to_theta(model)
+    theta.rename_tensors_to_paths()
+    return Dataset(properties, theta)
+
+
+def encoder_to_dataset(model: T5Encoder) -> Dataset:
+    return Dataset(properties=model.config.to_properties(), root_theta=model.theta)
+
+
+def encoder_model_to_dataset(model: T5Encoder) -> Dataset:
+    return Dataset(properties=model.config.to_properties(), root_theta=model.theta)
 
 
 def export_encoder_mlir(
@@ -82,30 +107,19 @@ def export_encoder_mlir(
     output.save_mlir(mlir_output_path)
 
 
-def prune_decoder_parameters(dataset: Dataset):
-    # Remove decoder tensors/parameters if present.
-    try:
-        del dataset.root_theta.tree["dec"]
-    except KeyError:
-        pass
-    try:
-        del dataset.properties["t5.decoder_start_token_id"]
-    except KeyError:
-        pass
-
-
-def export_encoder_iree_parameters(
-    model_path_or_dataset: str | Dataset,
-    output_path: str,
-    dtype: Optional[torch.dtype] = None,
-):
-    if isinstance(model_path_or_dataset, Dataset):
-        dataset = copy(model_path_or_dataset)
-    else:
-        dataset = Dataset.load(model_path_or_dataset)
-    if dtype:
-        dataset.root_theta = dataset.root_theta.transform(
-            functools.partial(set_float_dtype, dtype=dtype)
-        )
-    prune_decoder_parameters(dataset)
+def export_encoder_iree_parameters(model: T5Config, output_path: PathLike):
+    dataset = encoder_model_to_dataset(model)
     dataset.save(output_path)
+
+def export_encoder_to_iree(
+    model: T5Encoder,
+    batch_sizes: list[int],
+    mlir_output_path: PathLike,
+    parameters_output_path: PathLike,
+):
+    export_encoder_iree_parameters(model, parameters_output_path)
+    export_encoder_mlir(
+        model=parameters_output_path,
+        batch_sizes=batch_sizes,
+        mlir_output_path=mlir_output_path,
+    )

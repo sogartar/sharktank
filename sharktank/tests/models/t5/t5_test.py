@@ -38,6 +38,10 @@ from sharktank.models.t5 import (
     T5LayerFF,
     export_encoder_mlir,
     export_encoder_iree_parameters,
+    hugging_face_encoder_to_theta
+)
+from sharktank.models.t5.testing import (
+    encoder_toy_config
 )
 from sharktank.utils.testing import (
     make_rand_torch,
@@ -68,6 +72,74 @@ class T5EncoderEagerTest(TestCase):
         super().setUp()
         torch.random.manual_seed(12345)
         torch.no_grad()
+
+    @parameterized.expand(
+        [
+            [torch.float32, torch.float32],
+            [torch.bfloat16, torch.bfloat16, 2e-2, 1.6e-2],
+            [torch.float32, torch.bfloat16, 2e-2, 1.6e-2],
+        ]
+    )
+    def testCompareEagerToySizedModelAgainstHuggingFace(
+        self,
+        reference_dtype: torch.dtype,
+        target_dtype: torch.dtype,
+        atol: Optional[float] = None,
+        rtol: Optional[float] = None,
+    ):
+        torch.set_default_dtype(reference_dtype)
+        batch_size = 23
+        reference_config = (
+            encoder_toy_config().to_hugging_face_clip_text_model_config()
+        )
+        reference_model = ReferenceT5Config(
+            reference_config,
+        )
+        reference_model.eval()
+
+        theta = hugging_face_encoder_to_theta(reference_model)
+        theta.rename_tensors_to_paths()
+        theta = theta.transform(functools.partial(set_float_dtype, dtype=target_dtype))
+        config = T5Config.from_hugging_face_config(
+            reference_config
+        )
+        model = ClipEncoder(theta, config)
+
+        reference_inputs_embeds = make_rand_torch(
+            shape=[batch_size, tgt_len, reference_config.hidden_size],
+            dtype=reference_dtype,
+        )
+        reference_attention_mask = make_random_mask(
+            shape=[batch_size, 1, tgt_len, src_len], dtype=reference_dtype
+        )
+        reference_causal_attention_mask = make_random_mask(
+            shape=[batch_size, 1, tgt_len, src_len], dtype=reference_dtype
+        )
+        expected_outputs = reference_model(
+            inputs_embeds=reference_inputs_embeds,
+            attention_mask=reference_attention_mask,
+            causal_attention_mask=reference_causal_attention_mask,
+        )
+
+        inputs_embeds = ops.to(reference_inputs_embeds, dtype=target_dtype)
+        attention_mask = ops.to(reference_attention_mask, dtype=target_dtype)
+        causal_attention_mask = ops.to(
+            reference_causal_attention_mask, dtype=target_dtype
+        )
+        actual_outputs = model(
+            inputs_embeds=DefaultPrimitiveTensor(data=inputs_embeds),
+            attention_mask=DefaultPrimitiveTensor(data=attention_mask),
+            causal_attention_mask=DefaultPrimitiveTensor(data=causal_attention_mask),
+        )
+        actual_outputs = tree_map(
+            lambda t: None if t is None else ops.to(t, dtype=reference_dtype),
+            actual_outputs,
+        )
+
+        torch.testing.assert_close(
+            actual_outputs, expected_outputs, atol=atol, rtol=rtol
+        )
+
 
     @with_t5_data
     def testXxlBf16AgainstFluxGolden(self):

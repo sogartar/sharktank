@@ -204,6 +204,7 @@ class T5Config:
     feed_forward_proj: str = "relu"
     is_gated_act: bool = field(init=False)
     activation_dtype: torch.dtype = torch.float32
+    dtype: torch.dtype = torch.float32
     dense_act_fn: str = field(init=False)
     use_cache: bool = True
     pad_token_id: int = 0
@@ -222,53 +223,57 @@ class T5Config:
             self.dense_act_fn = "gelu_new"
 
     @staticmethod
-    def from_gguf_properties(properties: dict[str, Any], **kwargs):
-        assert properties["general.architecture"] == "t5"
-        assert (
-            properties["t5.attention.layer_norm_epsilon"]
-            == properties["t5.attention.layer_norm_rms_epsilon"]
+    def from_hugging_face_config(
+        config: "transformers.T5Config",
+    ) -> "ClipTextConfig":
+        return ClipTextConfig(
+            vocab_size=config.vocab_size,
+            hidden_size=config.hidden_size,
+            intermediate_size=config.intermediate_size,
+            projection_dim=config.projection_dim,
+            num_hidden_layers=config.num_hidden_layers,
+            num_attention_heads=config.num_attention_heads,
+            max_position_embeddings=config.max_position_embeddings,
+            hidden_act=config.hidden_act,
+            layer_norm_eps=config.layer_norm_eps,
+            pad_token_id=config.pad_token_id,
+            bos_token_id=config.bos_token_id,
+            eos_token_id=config.eos_token_id,
+            output_attentions=config.output_attentions,
+            output_hidden_states=config.output_hidden_states,
+            use_return_dict=config.use_return_dict,
+            dtype=config.torch_dtype or torch.float32,
         )
 
-        all_kwargs = {"vocab_size": None, "feed_forward_proj": None}
+    def to_hugging_face_config(self) -> "transformers.T5Config":
+        kwargs = self.to_properties()
+        kwargs["torch_dtype"] = kwargs["dtype"]
+        del kwargs["dtype"]
+        kwargs["return_dict"] = kwargs["use_return_dict"]
+        del kwargs["use_return_dict"]
+        from transformers import T5Config
 
-        gguf_to_config_names_map = {
-            "t5.context_length": ["context_length"],
-            "t5.embedding_length": ["d_model"],
-            "t5.feed_forward_length": ["d_ff"],
-            "t5.block_count": ["num_layers", "num_decoder_layers"],
-            "t5.attention.head_count": ["num_heads"],
-            "t5.attention.key_length": ["d_kv"],
-            "t5.attention.layer_norm_epsilon": ["layer_norm_epsilon"],
-            "t5.attention.relative_buckets_count": ["relative_attention_num_buckets"],
-            "tokenizer.ggml.eos_token_id": ["eos_token_id"],
-            "tokenizer.ggml.padding_token_id": ["pad_token_id"],
-        }
-        all_kwargs.update(
-            {
-                config_name: properties[gguf_name]
-                for gguf_name, config_names in gguf_to_config_names_map.items()
-                for config_name in config_names
-            }
-        )
+        return T5Config(**kwargs)
 
-        gguf_to_optional_config_names_map = {
-            "t5.decoder_start_token_id": ["decoder_start_token_id"],
-        }
-        all_kwargs.update(
-            {
-                config_name: properties[gguf_name]
-                for gguf_name, config_names in gguf_to_optional_config_names_map.items()
-                for config_name in config_names
-                if gguf_name in properties
-            }
-        )
 
-        if "tokenizer.ggml.tokens" in properties:
-            all_kwargs["vocab_size"] = len(properties["tokenizer.ggml.tokens"])
-        all_kwargs.update(kwargs)
+    @staticmethod
+    def from_properties(properties: dict[str, Any]) -> "ClipTextConfig":
+        kwargs = dict(properties)
+        kwargs.pop("SHARK_DATASET_VERSION")
+        if "dtype" in kwargs and kwargs["dtype"] is not None:
+            kwargs["dtype"] = serialized_name_to_dtype(kwargs["dtype"])
+        if "activation_dtype" in kwargs and kwargs["activation_dtype"] is not None:
+            kwargs["activation_dtype"] = serialized_name_to_dtype(kwargs["activation_dtype"])
 
-        return T5Config(**all_kwargs)
+        return ClipTextConfig(**kwargs)
 
+    def to_properties(self) -> dict[str, Any]:
+        res = asdict(self)
+        if self.dtype is not None:
+            res["dtype"] = dtype_to_serialized_name(self.dtype)
+        if self.activation_dtype is not None:
+            res["activation_dtype"] = dtype_to_serialized_name(self.activation_dtype)
+        return res
 
 @dataclass
 class ClipTextConfig:
