@@ -6,12 +6,11 @@
 
 """Tools for debugging models."""
 from typing import Callable, Dict, Optional, Tuple
-
+from collections.abc import Mapping
 from dataclasses import dataclass
 import re
 import os
 from pathlib import Path
-from typing import Sequence
 import iree.turbine.support.debugging
 
 import torch
@@ -30,8 +29,8 @@ SETTING_PART_PATTERN = re.compile(r"""^([\\+\\-])?([^=]+)(=(.*))?$""")
 class DebugFlags:
     enable_tensor_trace: bool = False
     enable_nan_checks: bool = False
-    save_goldens_path: Optional[Path] = None
-    golden_sequence_value: int = 0
+    trace_path: Optional[Path] = None
+    trace_sequence_value: int = 0
 
     # Feature flags.
     # Enables use of custom IREE kernels in lieu of PyTorch general
@@ -53,8 +52,8 @@ class DebugFlags:
             self.enable_tensor_trace = logical_sense
         elif name == "enable_nan_checks":
             self.enable_nan_checks = logical_sense
-        elif name == "save_goldens_path":
-            self.save_goldens_path = Path(value)
+        elif name == "trace_path":
+            self.trace_path = Path(value)
         elif name == "use_custom_iree_kernels":
             self.use_custom_iree_kernels = logical_sense
         else:
@@ -83,60 +82,68 @@ class DebugFlags:
 
 flags = DebugFlags.parse_from_env()
 
+
+def trace_tensor(
+    key: str, tensors: Dict[str, torch.Tensor] | list[torch.Tensor] | torch.Tensor
+):
+    if not flags.enable_tensor_trace:
+        return
+
+    if isinstance(tensors, Mapping):
+        sub_keys = list(tensors.keys())
+        sub_keys.sort()
+
+        for sub_key in sub_keys:
+            trace_tensor(f"{key}.{sub_key}", tensors[sub_key])
+        return
+
+    # Mutable global state does not work during export/torch tracing
+    # as it is done multiple times. The same supposed call would get
+    # different sequence number on different trace passes.
+    # This means that the trace sequence can not be encoded into the MLIR.
+    # Somehow we would need to reset the counter between torch tracing passes.
+    # key = f"{flags.trace_sequence_value:04d}.{key}"
+    # flags.trace_sequence_value += 1
+
+    if isinstance(tensors, torch.Tensor):
+        tensors = (tensors,)
+
+    from .. import ops
+
+    ops.trace_tensor(key, *tensors)
+
+
 TraceKey = str
 TraceTensors = Callable[[TraceKey, *Tuple[torch.Tensor, ...]], None]
 
 
-def set_trace_tensors_callback(callback: TraceTensors):
+def set_trace_tensor_callback(callback: TraceTensors):
     iree.turbine.support.debugging.trace_tensor_callback = callback
 
 
-def get_trace_tensors_callback() -> Optional[TraceTensors]:
+def get_trace_tensor_callback() -> Optional[TraceTensors]:
     return iree.turbine.support.debugging.trace_tensor_callback
 
 
-def default_trace_tensors_callback(key: str, *tensors: Tuple[torch.Tensor]):
-    tensors_in_dict = {f"{i}": t for i, t in enumerate(tensors)}
-    trace_tensors(key, tensors_in_dict, values=False, golden=True)
+def null_trace_tensor_callback(key: str, *tensors: Tuple[torch.Tensor]):
+    return
 
 
-set_trace_tensors_callback(default_trace_tensors_callback)
+def trace_tensor_to_safetensors_callback(key: str, *tensors: Tuple[torch.Tensor]):
+    if len(tensors) == 1:
+        tensors_in_dict = {"": t for t in tensors}
+    else:
+        tensors_in_dict = {f"{i}": t for i, t in enumerate(tensors)}
+    trace_tensors_to_safetensors(key, tensors_in_dict)
 
 
-def trace_tensor(
-    key: str, t: torch.Tensor, *, values: bool = True, golden: bool = False
-):
-    trace_tensors(key, {"default": t}, values=values, golden=golden)
-
-
-def trace_tensors(
-    key: str,
-    tensors: Dict[str, torch.Tensor],
-    *,
-    values: bool = True,
-    golden: bool = False,
-):
-    if golden:
-        if flags.save_goldens_path:
-            _save_goldens(key, tensors)
-        return
-    if not flags.enable_tensor_trace:
-        return
-    for name, t in tensors.items():
-        if t is not None:
-            values_repr = repr(t) if values else "...elided..."
-            print(f"::: TRACE {key}:{name}({list(t.shape), t.dtype}) =\n{values_repr}")
-
-
-def _save_goldens(key: str, tensors: Dict[str, torch.Tensor]):
-    next_sequence = flags.golden_sequence_value
-    flags.golden_sequence_value += 1
+def trace_tensors_to_safetensors(key: str, tensors: Dict[str, torch.Tensor]):
     # Sanitize as path.
     key = re.sub("[" + re.escape(r"""#~!@$%^&*()[]{}:;"'""") + "]", "", key)
     from safetensors.torch import save_file
 
-    path: Path = flags.save_goldens_path / f"{next_sequence:04d}_{key}.safetensors"
+    path: Path = flags.trace_path / f"{key}.safetensors"
     path.parent.mkdir(parents=True, exist_ok=True)
-    print(f"::: SAVE GOLDEN {path}")
+    print(f"::: TRACE TENSOR(S) {path}")
     non_none_tensors = {k: v.contiguous() for k, v in tensors.items() if v is not None}
-    save_file(non_none_tensors, path)
+    save_file(non_none_tensors, filename=path)

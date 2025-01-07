@@ -57,7 +57,7 @@ __all__ = [
     "softmax",
     "squeeze",
     "to",
-    "trace_tensors",
+    "trace_tensor",
     "transfer_to_logical_device",
     "transpose",
     "unflatten",
@@ -1027,11 +1027,11 @@ def _to_trampoline(d: SignatureDispatcher, tensor: AnyTensor, *args, **kwargs):
 
 
 @overridable
-def trace_tensors(key: str, *tensors: tuple[AnyTensor]):
+def trace_tensor(key: str, *tensors: tuple[AnyTensor]):
     ...
 
 
-@trace_tensors.trampoline
+@trace_tensor.trampoline
 def _transfer_to_logical_device_trampoline(
     d: SignatureDispatcher, key: str, *tensors: tuple[AnyTensor]
 ):

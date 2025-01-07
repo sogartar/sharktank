@@ -8,12 +8,23 @@ import unittest
 
 import torch
 import torch.nn.functional as F
-
+import iree.turbine.aot as aot
+from iree.turbine.aot import FxProgramsBuilder
+import iree.runtime
+import iree.compiler
+import safetensors
 from sharktank import ops
 from sharktank.types import *
+from sharktank.layers import BaseLayer
 from sharktank.utils import debugging
 from sharktank.utils.testing import TempDirTestBase
-import safetensors
+from sharktank.utils.iree import (
+    get_iree_devices,
+    load_iree_module,
+    run_iree_module_function,
+    prepare_iree_module_function_args,
+    make_hal_buffer_view_trace_default_callback,
+)
 
 
 class BroadcastDimsTest(unittest.TestCase):
@@ -283,44 +294,142 @@ class TestOpExport(unittest.TestCase):
 
 
 class TestTraceTensors(TempDirTestBase):
-    def testTraceOneTensorInEagerMode(self):
-        save_goldens_path_stash = debugging.flags.save_goldens_path
-        debugging.flags.save_goldens_path = self._temp_dir
-        debugging.flags.golden_sequence_value = 0
+    def setUp(self):
+        super().setUp()
+        self.callback_stash = debugging.get_trace_tensor_callback()
+        debugging.set_trace_tensor_callback(
+            debugging.trace_tensor_to_safetensors_callback
+        )
 
+        self.enable_tensor_trace_stash = debugging.flags.enable_tensor_trace
+        debugging.flags.enable_tensor_trace = True
+
+        self.trace_path_stash = debugging.flags.trace_path
+        debugging.flags.trace_path = self._temp_dir
+
+    def tearDown(self):
+        super().tearDown()
+        debugging.set_trace_tensor_callback(self.callback_stash)
+        debugging.flags.enable_tensor_trace = self.enable_tensor_trace_stash
+        debugging.flags.trace_path = self.trace_path_stash
+
+    def testTraceOneTensorInEagerMode(self):
         tensor = torch.arange(1, 5)
         trace_key = "test_trace_key"
-        ops.trace_tensors(trace_key, tensor)
+        ops.trace_tensor(trace_key, tensor)
 
-        trace_filepath = (
-            debugging.flags.save_goldens_path / f"0000_{trace_key}.safetensors"
-        )
+        trace_filepath = debugging.flags.trace_path / f"{trace_key}.safetensors"
         with safetensors.safe_open(trace_filepath, framework="pt", device="cpu") as f:
             assert len(f.keys()) == 1
-            recorded_tensor = f.get_tensor("0")
+            recorded_tensor = f.get_tensor("")
         torch.testing.assert_close(recorded_tensor, tensor, rtol=0, atol=0)
 
-        debugging.flags.save_goldens_path = save_goldens_path_stash
-
     def testTraceOneShardedTensorInEagerMode(self):
-        save_goldens_path_stash = debugging.flags.save_goldens_path
-        debugging.flags.save_goldens_path = self._temp_dir
-        debugging.flags.golden_sequence_value = 0
-
         tensor = torch.arange(1, 6)
         sharded_tensor = ops.reshard_split(tensor, count=2, dim=0)
         trace_key = "test_trace_key"
-        ops.trace_tensors(trace_key, sharded_tensor)
+        ops.trace_tensor(trace_key, sharded_tensor)
 
+        trace_filepath = debugging.flags.trace_path / f"{trace_key}.safetensors"
+        with safetensors.safe_open(trace_filepath, framework="pt", device="cpu") as f:
+            assert len(f.keys()) == 1
+            recorded_tensor = f.get_tensor("")
+        torch.testing.assert_close(recorded_tensor, tensor, rtol=0, atol=0)
+
+    def testTraceTensorWithIree(self):
+        trace_key = "test_trace_key"
+        tensor = torch.arange(1, 6, dtype=torch.float32)
+
+        class Module(BaseLayer):
+            def forward(self, x: torch.Tensor):
+                self.trace_tensor(trace_key, x)
+                return x
+
+        model = Module()
+        fxb = FxProgramsBuilder(model)
+
+        @fxb.export_program(
+            name="forward",
+            args=[tensor],
+            strict=False,
+        )
+        def _(model, x):
+            return model(x)
+
+        output = aot.export(fxb)
+        mlir_path = self._temp_dir / "model.mlir"
+        output.save_mlir(mlir_path)
+        iree_module_path = self._temp_dir / "model.vmfb"
+        iree.compiler.compile_file(
+            str(mlir_path),
+            output_file=str(iree_module_path),
+            extra_args=["--iree-hal-target-device=local"],
+        )
+
+        iree_devices = get_iree_devices(driver="local-task", device_count=1)
+        iree_buffere_view_trace_callback = make_hal_buffer_view_trace_default_callback(
+            iree_devices[0]
+        )
+        debug_sink = iree.runtime.HalModuleDebugSink(iree_buffere_view_trace_callback)
+        iree_module, iree_vm_context, iree_vm_instance = load_iree_module(
+            module_path=iree_module_path,
+            devices=iree_devices,
+            debug_sink=debug_sink,
+        )
+        iree_args = prepare_iree_module_function_args(
+            args=[tensor],
+            devices=iree_devices,
+        )
+        run_iree_module_function(
+            module=iree_module,
+            vm_context=iree_vm_context,
+            args=iree_args,
+            driver="local-task",
+            function_name=f"forward",
+        )
+
+        trace_filepath = debugging.flags.trace_path / f"{trace_key}.safetensors"
+        with safetensors.safe_open(trace_filepath, framework="pt", device="cpu") as f:
+            assert len(f.keys()) == 1
+            recorded_tensor = f.get_tensor("")
+        torch.testing.assert_close(recorded_tensor, tensor, rtol=0, atol=0)
+
+    def testTraceInNestedModules(self):
+        tensor = torch.arange(1, 6)
+        trace_key = "test_trace_key"
+
+        class ModuleC(BaseLayer):
+            def forward(self):
+                self.trace_tensor(trace_key, {"the_tensor": tensor})
+                return
+
+        class ModuleB(BaseLayer):
+            def __init__(self):
+                super().__init__()
+                self.c = ModuleC()
+
+            def forward(self):
+                return self.c()
+
+        class ModuleA(BaseLayer):
+            def __init__(self):
+                super().__init__()
+                self.b = ModuleB()
+
+            def forward(self):
+                return self.b()
+
+        a = ModuleA()
+        a.set_recursively_submodules_default_trace_tensor_key_prefix()
+
+        a()
         trace_filepath = (
-            debugging.flags.save_goldens_path / f"0000_{trace_key}.safetensors"
+            debugging.flags.trace_path / f"b.c.{trace_key}.the_tensor.safetensors"
         )
         with safetensors.safe_open(trace_filepath, framework="pt", device="cpu") as f:
             assert len(f.keys()) == 1
-            recorded_tensor = f.get_tensor("0")
+            recorded_tensor = f.get_tensor("")
         torch.testing.assert_close(recorded_tensor, tensor, rtol=0, atol=0)
-
-        debugging.flags.save_goldens_path = save_goldens_path_stash
 
 
 if __name__ == "__main__":

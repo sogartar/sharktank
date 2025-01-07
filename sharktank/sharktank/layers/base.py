@@ -6,11 +6,13 @@
 
 from typing import Dict, Optional
 from collections import OrderedDict
+from collections.abc import Mapping
 import torch
 import torch.nn as nn
 
 from ..types import InferenceTensor, Theta, AnyTensor
 from ..utils import debugging
+from .. import ops
 
 __all__ = [
     "BaseLayer",
@@ -18,29 +20,45 @@ __all__ = [
 ]
 
 
+def _set_recursively_submodules_default_trace_tensor_key_prefix(
+    module: nn.Module, prefix: str = ""
+):
+    if isinstance(module, BaseLayer):
+        module.trace_tensor_key_prefix = prefix
+
+    for name, submodule in module.named_children():
+        submodule_prefix = f"{prefix}{name}."
+        _set_recursively_submodules_default_trace_tensor_key_prefix(
+            submodule, submodule_prefix
+        )
+
+
 class BaseLayer(nn.Module):
     """Base class of all of our layers."""
 
-    def trace_tensor(
-        self, key: str, t: torch.Tensor, *, values: bool = True, golden: bool = False
-    ):
-        debugging.trace_tensor(key, t, values=values, golden=golden)
+    def __init__(self):
+        super().__init__()
+        self._trace_tensor_key_prefix = ""
 
-    def trace_tensors(
+    def set_recursively_submodules_default_trace_tensor_key_prefix(self):
+        _set_recursively_submodules_default_trace_tensor_key_prefix(
+            self, self.trace_tensor_key_prefix
+        )
+
+    @property
+    def trace_tensor_key_prefix(self) -> str:
+        return self._trace_tensor_key_prefix
+
+    @trace_tensor_key_prefix.setter
+    def trace_tensor_key_prefix(self, value: str):
+        self._trace_tensor_key_prefix = value
+
+    def trace_tensor(
         self,
         key: str,
-        tensors: Dict[str, torch.Tensor],
-        *,
-        values: bool = True,
-        golden: bool = False,
+        tensors: Dict[str, torch.Tensor] | list[torch.Tensor] | torch.Tensor,
     ):
-        debugging.trace_tensors(key, tensors, values=values, golden=golden)
-
-    def trace_golden(self, key: str, t: torch.Tensor):
-        debugging.trace_tensor(key, t, golden=True)
-
-    def trace_goldens(self, key: str, tensors: Dict[str, torch.Tensor]):
-        debugging.trace_tensors(key, tensors, golden=True)
+        debugging.trace_tensor(f"{self.trace_tensor_key_prefix}{key}", tensors)
 
     def assert_not_nan(self, *ts: torch.Tensor):
         """Checks whether tensors have nan values in them.
