@@ -150,6 +150,7 @@ def make_mmdit_single_block_random_theta(
     mlp_hidden_size = int((mlp_ratio - 1) * hidden_size)
     mlp_hidden_size2 = int((mlp_ratio + 1) * hidden_size)
     mlp_hidden_size3 = int((2 * mlp_ratio - 1) * hidden_size)
+
     return Theta(
         {
             "norm.key_norm.scale": DefaultPrimitiveTensor(  #

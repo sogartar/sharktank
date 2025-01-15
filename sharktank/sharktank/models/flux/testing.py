@@ -94,6 +94,108 @@ def make_random_theta(config: FluxParams, dtype: torch.dtype):
         "vector_in.out_layer.bias": DefaultPrimitiveTensor(  #
             data=make_rand_torch((hidden_size,), dtype=dtype)
         ),
+        # "double_blocks.0.img_attn.norm.key_norm.scale": DefaultPrimitiveTensor(  #
+        #     data=make_rand_torch((in_channels2,), dtype=dtype)
+        # ),
+        # "double_blocks.0.img_attn.norm.query_norm.scale": DefaultPrimitiveTensor(  #
+        #     data=make_rand_torch((in_channels2,), dtype=dtype)
+        # ),
+        # "double_blocks.0.img_attn.proj.bias": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((hidden_size,), dtype=dtype)
+        # ),
+        # "double_blocks.0.img_attn.proj.weight": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((hidden_size, hidden_size), dtype=dtype)
+        # ),
+        # "double_blocks.0.img_attn.qkv.bias": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((mlp_hidden_size,), dtype=dtype)
+        # ),
+        # "double_blocks.0.img_attn.qkv.weight": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((mlp_hidden_size, hidden_size), dtype=dtype)
+        # ),
+        # "double_blocks.0.img_mlp.0.bias": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((mlp_hidden_size2), dtype=dtype)
+        # ),
+        # "double_blocks.0.img_mlp.0.weight": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((mlp_hidden_size2, hidden_size), dtype=dtype)
+        # ),
+        # "double_blocks.0.img_mlp.2.bias": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((hidden_size), dtype=dtype)
+        # ),
+        # "double_blocks.0.img_mlp.2.weight": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((hidden_size, mlp_hidden_size2), dtype=dtype)
+        # ),
+        # "double_blocks.0.img_mod.lin.bias": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((mlp_hidden_size3,), dtype=dtype)
+        # ),
+        # "double_blocks.0.img_mod.lin.weight": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((mlp_hidden_size3, hidden_size), dtype=dtype)
+        # ),
+        # "double_blocks.0.txt_attn.norm.key_norm.scale": DefaultPrimitiveTensor(  #
+        #     data=make_rand_torch((in_channels2,), dtype=dtype)
+        # ),
+        # "double_blocks.0.txt_attn.norm.query_norm.scale": DefaultPrimitiveTensor(  #
+        #     data=make_rand_torch((in_channels2,), dtype=dtype)
+        # ),
+        # "double_blocks.0.txt_attn.proj.bias": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((hidden_size,), dtype=dtype)
+        # ),
+        # "double_blocks.0.txt_attn.proj.weight": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((hidden_size, hidden_size), dtype=dtype)
+        # ),
+        # "double_blocks.0.txt_attn.qkv.bias": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((mlp_hidden_size,), dtype=dtype)
+        # ),
+        # "double_blocks.0.txt_attn.qkv.weight": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((mlp_hidden_size, hidden_size), dtype=dtype)
+        # ),
+        # "double_blocks.0.txt_mlp.0.bias": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((mlp_hidden_size2), dtype=dtype)
+        # ),
+        # "double_blocks.0.txt_mlp.0.weight": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((mlp_hidden_size2, hidden_size), dtype=dtype)
+        # ),
+        # "double_blocks.0.txt_mlp.2.bias": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((hidden_size), dtype=dtype)
+        # ),
+        # "double_blocks.0.txt_mlp.2.weight": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((hidden_size, mlp_hidden_size2), dtype=dtype)
+        # ),
+        # "double_blocks.0.txt_mod.lin.bias": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((mlp_hidden_size3,), dtype=dtype)
+        # ),
+        # "double_blocks.0.txt_mod.lin.weight": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((mlp_hidden_size3, hidden_size), dtype=dtype)
+        # ),
+        # "single_blocks.0.norm.key_norm.scale": DefaultPrimitiveTensor(  #
+        #     data=make_rand_torch((in_channels2,), dtype=dtype)
+        # ),
+        # "single_blocks.0.norm.query_norm.scale": DefaultPrimitiveTensor(  #
+        #     data=make_rand_torch((in_channels2,), dtype=dtype)
+        # ),
+        # "single_blocks.0.attn.proj.bias": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((hidden_size,), dtype=dtype)
+        # ),
+        # "single_blocks.0.attn.proj.weight": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((hidden_size, hidden_size), dtype=dtype)
+        # ),
+        # "single_blocks.0.linear1.bias": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((mlp_hidden_size5,), dtype=dtype)
+        # ),
+        # "single_blocks.0.linear1.weight": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((mlp_hidden_size5, hidden_size), dtype=dtype)
+        # ),
+        # "single_blocks.0.linear2.bias": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((hidden_size), dtype=dtype)
+        # ),
+        # "single_blocks.0.linear2.weight": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((hidden_size, mlp_hidden_size4), dtype=dtype)
+        # ),
+        # "single_blocks.0.modulation.lin.bias": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((mlp_hidden_size,), dtype=dtype)
+        # ),
+        # "single_blocks.0.modulation.lin.weight": DefaultPrimitiveTensor(
+        #     data=make_rand_torch((mlp_hidden_size, hidden_size), dtype=dtype)
+        # ),
         "final_layer.linear.weight": DefaultPrimitiveTensor(  #
             data=make_rand_torch(
                 (patch_size * patch_size * out_channels, hidden_size), dtype=dtype
@@ -161,6 +263,24 @@ def make_dev_single_layer_config():
         depth=1,
         depth_single_blocks=1,
         axes_dim=[16, 56, 56],
+        theta=10_000,
+        qkv_bias=True,
+        guidance_embed=True,
+    )
+
+
+def make_toy_sized_model_config():
+    return FluxParams(
+        in_channels=17,
+        out_channels=19,
+        vec_in_dim=23,
+        context_in_dim=29,
+        hidden_size=31,
+        mlp_ratio=4.0,
+        num_heads=13,
+        depth=2,
+        depth_single_blocks=3,
+        axes_dim=[37, 41, 43],
         theta=10_000,
         qkv_bias=True,
         guidance_embed=True,

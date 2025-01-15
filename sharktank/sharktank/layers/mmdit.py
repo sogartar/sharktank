@@ -7,13 +7,14 @@
 """MMDIT Layers adapted from black-forest-labs' flux implementation
 https://github.com/black-forest-labs/flux/blob/main/src/flux/modules/layers.py
 """
-
+from typing import Optional
+from collections import OrderedDict
 import torch.nn.functional as F
 import torch
 from torch import Tensor
 
 from .. import ops
-
+from ..types import AnyTensor
 from .base import Theta, ThetaLayer
 from .linear import LinearLayer
 from .modulation import ModulationLayer
@@ -159,6 +160,33 @@ class MMDITDoubleBlock(ThetaLayer):
         txt = txt + txt_mod2.gate * txt_mlp_out3
 
         return img, txt
+
+    def sample_inputs(
+        self, batch_size: int = 1, function: Optional[str] = None
+    ) -> tuple[tuple[AnyTensor], OrderedDict[str, AnyTensor]]:
+        if not (function is None or function == "forward"):
+            raise ValueError(f'Only function "forward" is supported. Got "{function}"')
+
+        hidden_size = self.theta("img_attn.proj.bias").shape[0]
+
+        img = torch.rand([batch_size, 23, hidden_size], dtype=self.dtype)
+        txt = torch.rand([batch_size, 29, hidden_size])
+        vec = torch.rand([batch_size, hidden_size])
+        pe = torch.rand([batch_size, 1, 52, 64, 2, 2])
+
+        return tuple(), OrderedDict(
+            (
+                ("img", img),
+                ("txt", txt),
+                ("vec", vec),
+                ("pe", pe),
+            )
+        )
+
+    def _deduce_dtype(self) -> torch.dtype:
+        dtype = self.theta("img_mod.lin.weight").dtype
+        assert dtype == self.theta("img_attn.qkv.weight").dtype, "Inconsistent dtype"
+        return dtype
 
 
 class MMDITSingleBlock(ThetaLayer):

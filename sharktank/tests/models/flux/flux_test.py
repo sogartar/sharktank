@@ -37,6 +37,7 @@ from sharktank.utils.iree import (
 from sharktank import ops
 from sharktank.transforms.dataset import set_float_dtype
 from sharktank.types import Dataset, Theta
+from flux.model import Flux as BflFlux
 
 logging.basicConfig(level=logging.DEBUG)
 with_flux_data = pytest.mark.skipif("not config.getoption('with_flux_data')")
@@ -217,6 +218,47 @@ class FluxTest(TempDirTestBase):
 
         torch.testing.assert_close(target_output, reference_output, atol=atol, rtol=0)
 
+    def runTestCompareTorchEagerAgainstBlackForestLabs(
+        self,
+        reference_model: BflFlux,
+        reference_dtype: torch.dtype,
+        target_model: FluxModelV1,
+    ):
+        target_input_args, target_input_kwargs = target_model.sample_inputs()
+
+        reference_input_args = [
+            covert_dtype_if_dtype(
+                t, source_dtype=target_model.dtype, target_dtype=reference_dtype
+            )
+            for t in target_input_args
+        ]
+        reference_input_kwargs = OrderedDict(
+            (
+                k,
+                covert_dtype_if_dtype(
+                    t, source_dtype=target_model.dtype, target_dtype=reference_dtype
+                ),
+            )
+            for k, t in target_input_kwargs.items()
+        )
+
+        reference_output = reference_model(
+            *reference_input_args, **reference_input_kwargs
+        )
+        if isinstance(reference_output, torch.Tensor):
+            reference_output = (reference_output,)
+        target_output = target_model(*target_input_args, **target_input_kwargs)
+        if isinstance(target_output, torch.Tensor):
+            target_output = (target_output,)
+        target_output = [
+            covert_dtype_if_dtype(
+                t, source_dtype=target_model.dtype, target_dtype=reference_dtype
+            )
+            for t in target_output
+        ]
+
+        torch.testing.assert_close(target_output, reference_output)
+
     @pytest.mark.xfail(
         raises=AssertionError,
         reason="Accuracy is not good enough. The observed absolute error is 8976.53.",
@@ -311,6 +353,106 @@ class FluxTest(TempDirTestBase):
             target_model=target_model,
             atol=1e-4,
         )
+
+    @with_flux_data
+    def testCompareDevTorchEagerBf16AgainstBlackForestLabsBf16(self):
+        parameters_output_path = self._temp_dir / "parameters.irpa"
+        reference_dtype = torch.bfloat16
+
+        from flux.util import load_flow_model
+
+        reference_model = load_flow_model(name="flux-dev", device="cpu")
+
+        import_flux_transformer_dataset_from_hugging_face(
+            repo_id="black-forest-labs/FLUX.1-dev/black-forest-labs-transformer",
+            parameters_output_path=parameters_output_path,
+        )
+        target_dataset = Dataset.load(parameters_output_path)
+        target_model = FluxModelV1(
+            theta=target_dataset.root_theta,
+            params=FluxParams.from_hugging_face_properties(target_dataset.properties),
+        )
+
+        self.runTestCompareTorchEagerAgainstBlackForestLabs(
+            reference_model=reference_model,
+            reference_dtype=reference_dtype,
+            target_model=target_model,
+        )
+
+    @with_flux_data
+    def testCompareDevTorchEagerF32AgainstBlackForestLabsF32(self):
+        parameters_output_path = self._temp_dir / "parameters.irpa"
+        reference_dtype = torch.float32
+        target_dtype = torch.float32
+
+        from flux.util import load_flow_model
+
+        reference_model = load_flow_model(name="flux-dev", device="cpu")
+        for param in reference_model.parameters():
+            if torch.is_floating_point(param.data):
+                param.data = param.data.to(dtype=reference_dtype)
+        for param in reference_model.parameters():
+            assert param.data.dtype != torch.bfloat16
+
+        import_flux_transformer_dataset_from_hugging_face(
+            repo_id="black-forest-labs/FLUX.1-dev/black-forest-labs-transformer",
+            parameters_output_path=parameters_output_path,
+        )
+        target_dataset = Dataset.load(parameters_output_path)
+        target_dataset.root_theta = Theta(
+            {
+                k: set_float_dtype(t, target_dtype)
+                for k, t in target_dataset.root_theta.flatten().items()
+            }
+        )
+        target_model = FluxModelV1(
+            theta=target_dataset.root_theta,
+            params=FluxParams.from_hugging_face_properties(target_dataset.properties),
+        )
+
+        self.runTestCompareTorchEagerAgainstBlackForestLabs(
+            reference_model=reference_model,
+            reference_dtype=reference_dtype,
+            target_model=target_model,
+        )
+
+    @with_flux_data
+    def testCompareDevTorchEagerF64AgainstBlackForestLabsF64(self):
+        parameters_output_path = self._temp_dir / "parameters.irpa"
+        reference_dtype = torch.float64
+        target_dtype = torch.float64
+
+        from flux.util import load_flow_model
+
+        reference_model = load_flow_model(name="flux-dev", device="cpu")
+        for param in reference_model.parameters():
+            if torch.is_floating_point(param.data):
+                param.data = param.data.to(dtype=reference_dtype)
+
+        import_flux_transformer_dataset_from_hugging_face(
+            repo_id="black-forest-labs/FLUX.1-dev/black-forest-labs-transformer",
+            parameters_output_path=parameters_output_path,
+        )
+        target_dataset = Dataset.load(parameters_output_path)
+        target_dataset.root_theta = Theta(
+            {
+                k: set_float_dtype(t, target_dtype)
+                for k, t in target_dataset.root_theta.flatten().items()
+            }
+        )
+        target_model = FluxModelV1(
+            theta=target_dataset.root_theta,
+            params=FluxParams.from_hugging_face_properties(target_dataset.properties),
+        )
+
+        self.runTestCompareTorchEagerAgainstBlackForestLabs(
+            reference_model=reference_model,
+            reference_dtype=reference_dtype,
+            target_model=target_model,
+        )
+
+    def testCompareToySizedEagerF32AgainstHuggingFaceF32(self):
+        pass
 
     @with_flux_data
     def testExportSchnellTransformerFromHuggingFace(self):

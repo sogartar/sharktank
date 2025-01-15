@@ -11,6 +11,7 @@ logging.basicConfig(level=logging.DEBUG)
 import unittest
 
 import torch
+from diffusers.models.transformers.transformer_flux import FluxTransformerBlock
 
 from iree.turbine import aot
 from sharktank.layers import (
@@ -54,6 +55,29 @@ class MMDITTest(TempDirTestBase):
         output = aot.export(fxb)
         output.verify()
         asm = str(output.mlir_module)
+
+    def testCompareToySizedDoubleBlockEagerF32AgainstHuggingFaceF32(self):
+        num_heads = 13
+        in_channels = 17
+        hidden_size = 19
+        theta = make_mmdit_double_block_random_theta(
+            in_channels=in_channels,
+            hidden_size=hidden_size,
+        )
+        theta = self.save_load_theta(theta)
+        target_model = MMDITDoubleBlock(
+            theta=theta, num_heads=self.num_heads, hidden_size=self.hidden_size
+        )
+        target_input_args, target_input_kwargs = target_model.sample_inputs()
+        target_result = target_model(*target_input_args, **target_input_kwargs)
+
+        reference_model = FluxTransformerBlock(
+            dim=in_channels,
+            num_attention_heads=num_heads,
+            attention_head_dim=hidden_size,
+        )
+        state_dict = reference_model.state_dict()
+        pass
 
     def testSingleExport(self):
         theta = make_mmdit_single_block_random_theta(hidden_size=self.hidden_size)
