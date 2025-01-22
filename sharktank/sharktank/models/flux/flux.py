@@ -19,6 +19,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from ...layers import *
+from ...layers.rotary_embedding import compute_rotary_embedding_table
 from ...types import *
 from ...utils.create_cache import *
 from ...utils.testing import make_rand_torch
@@ -318,15 +319,22 @@ def qk_norm(q, k, v, rms_q, rms_k):
 
 
 def rope(pos: AnyTensor, dim: int, theta: int) -> AnyTensor:
+    out = compute_rotary_embedding_table(
+        positions=pos.flatten(),
+        rope_dimension_count=dim,
+        rope_freq_base=theta,
+        dtype=torch.float64,
+    ).float()
+    return out.view(list(pos.shape) + [out.shape[-1]])
     assert dim % 2 == 0
     scale = torch.arange(0, dim, 2, dtype=torch.float64, device=pos.device) / dim
     omega = 1.0 / (theta**scale)
     out = torch.einsum("...n,d->...nd", pos, omega)
-    out = torch.stack(
-        [torch.cos(out), -torch.sin(out), torch.sin(out), torch.cos(out)], dim=-1
-    )
-    # out = out.view(out.shape[0], out.shape[1], out.shape[2], out.shape[3], 2, 2)
-    out = out.view(out.shape[0], out.shape[1], out.shape[2], 2, 2)
+    out = out.repeat_interleave(2, dim=-1)
+    # out = torch.stack(
+    #     [torch.cos(out), -torch.sin(out), torch.sin(out), torch.cos(out)], dim=-1
+    # )
+    # out = out.view(out.shape[0], out.shape[1], out.shape[2], 2, 2)
     return out.float()
 
 
@@ -353,10 +361,11 @@ class EmbedND(torch.nn.Module):
         n_axes = ids.shape[-1]
         emb = torch.cat(
             [rope(ids[..., i], self.axes_dim[i], self.theta) for i in range(n_axes)],
-            dim=-3,
+            dim=2,
         )
 
-        return emb.unsqueeze(1)
+        return emb
+        # return emb.unsqueeze(1)
 
 
 class LastLayer(ThetaLayer):

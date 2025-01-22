@@ -13,6 +13,7 @@ import torch
 from torch import Tensor
 
 from .. import ops
+from .. import kernels
 
 from .base import Theta, ThetaLayer
 from .linear import LinearLayer
@@ -34,8 +35,62 @@ def apply_rope(xq: Tensor, xk: Tensor, freqs_cis: Tensor) -> tuple[Tensor, Tenso
     return xq_out.reshape(*xq.shape).type_as(xq), xk_out.reshape(*xk.shape).type_as(xk)
 
 
+def check_applied_rope_value(
+    x: Tensor, freqs_cis: Tensor, x_roped: Tensor, n: int, h: int, s: int, d: int
+):
+    torch.testing.assert_close(
+        x_roped[n, h, s, d, 0],
+        torch.cos(freqs_cis[n, 0, s, d]) * x[n, h, s, 2 * d]
+        - torch.sin(freqs_cis[n, 0, s, d]) * x[n, h, s, 2 * d + 1],
+    )
+    torch.testing.assert_close(
+        x_roped[n, h, s, d, 1],
+        torch.sin(freqs_cis[n, 0, s, d]) * x[n, h, s, 2 * d]
+        + torch.cos(freqs_cis[n, 0, s, d]) * x[n, h, s, 2 * d + 1],
+    )
+
+
+def apply_rope_from_frequencies(
+    xq: Tensor, xk: Tensor, freqs_cis: Tensor
+) -> tuple[Tensor, Tensor]:
+    freqs_cis = freqs_cis.unsqueeze(1)
+    m = torch.stack(
+        [
+            torch.cos(freqs_cis),
+            -torch.sin(freqs_cis),
+            torch.sin(freqs_cis),
+            torch.cos(freqs_cis),
+        ],
+        dim=-1,
+    )
+    m = m.view(m.shape[0], m.shape[1], m.shape[2], m.shape[3], 2, 2)
+    xq_ = xq.float().reshape(*xq.shape[:-1], -1, 1, 2)
+    xk_ = xk.float().reshape(*xk.shape[:-1], -1, 1, 2)
+    xq_out = m[..., 0] * xq_[..., 0] + m[..., 1] * xq_[..., 1]
+    xk_out = m[..., 0] * xk_[..., 0] + m[..., 1] * xk_[..., 1]
+    check_applied_rope_value(xq, freqs_cis, xq_out, n=0, h=3, s=15, d=4)
+    check_applied_rope_value(xq, freqs_cis, xq_out, n=0, h=5, s=1016, d=13)
+    return xq_out.reshape(*xq.shape).type_as(xq), xk_out.reshape(*xk.shape).type_as(xk)
+
+
+def apply_rope_with_kernel(
+    xq: Tensor, xk: Tensor, freqs_cis: Tensor
+) -> tuple[Tensor, Tensor]:
+    # freqs_cis = freqs_cis.repeat_interleave(2, dim=-1)
+    xq2 = xq.permute(0, 2, 1, 3).to(freqs_cis.dtype)
+    xk2 = xk.permute(0, 2, 1, 3).to(freqs_cis.dtype)
+    xq_out = kernels.apply_rotary_embedding(xq2.to(freqs_cis.dtype), freqs_cis)
+    xk_out = kernels.apply_rotary_embedding(xk2.to(freqs_cis.dtype), freqs_cis)
+    xq_out = xq_out.permute(0, 2, 1, 3)
+    xk_out = xk_out.permute(0, 2, 1, 3)
+    return xq_out.type_as(xq), xk_out.type_as(xk)
+
+
 def attention(q, k, v, pe):
-    q, k = apply_rope(q, k, pe)  # todo
+    # q_good, k_good = apply_rope_from_frequencies(q, k, pe)  # todo
+    q, k = apply_rope_with_kernel(q, k, pe)
+    # torch.testing.assert_close(q, q_good)
+    # torch.testing.assert_close(k, k_good)
 
     x = ops.scaled_dot_product_attention(q=q, k=k, v=v, a=None)
     x = ops.permute(x, (0, 2, 1, 3))
