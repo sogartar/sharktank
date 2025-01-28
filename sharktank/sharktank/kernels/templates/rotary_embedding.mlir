@@ -27,8 +27,8 @@ util.func private @sharktank_rotary_embedding_{{bs}}_{{sl}}_{{heads}}_{{dims}}_{
 
   %result = linalg.generic {
       indexing_maps = [
-                       affine_map<(d0, d1, d2, d3) -> (d0, d1, d3)>,
-                       affine_map<(d0, d1, d2, d3) -> (d0, d1, d2, d3)>
+                       affine_map<(d0, d2, d1, d3) -> (d0, d2, d3)>,
+                       affine_map<(d0, d2, d1, d3) -> (d0, d1, d2, d3)>
                        ],
       iterator_types = ["parallel", "parallel", "parallel", "parallel"]}
       ins(%table : !table_tensor_type )
@@ -44,8 +44,8 @@ util.func private @sharktank_rotary_embedding_{{bs}}_{{sl}}_{{heads}}_{{dims}}_{
       %a_sinb = math.sin %b0 : {{dtype}}
       %real_index = arith.muli %div, %c2 : index
       %imag_index = arith.addi %real_index, %c1 : index
-      %real = tensor.extract %input[%0, %1, %2, %real_index] : !input_tensor_type
-      %imag = tensor.extract %input[%0, %1, %2, %imag_index] : !input_tensor_type
+      %real = tensor.extract %input[%0, %2, %1, %real_index] : !input_tensor_type
+      %imag = tensor.extract %input[%0, %2, %1, %imag_index] : !input_tensor_type
       %cmp = arith.cmpi eq, %mod, %c0 : index
       %real_t0 = arith.mulf %real, %a_cosb : {{dtype}}
       %real_t1 = arith.mulf %imag, %a_sinb : {{dtype}}

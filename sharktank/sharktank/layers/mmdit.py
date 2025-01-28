@@ -27,12 +27,12 @@ def qk_norm(q, k, v, rms_q, rms_k):
 
 
 def apply_rope(xq: Tensor, xk: Tensor, freqs_cis: Tensor) -> tuple[Tensor, Tensor]:
-    xq2 = xq.permute(0, 2, 1, 3).to(freqs_cis.dtype)
-    xk2 = xk.permute(0, 2, 1, 3).to(freqs_cis.dtype)
-    xq_out = kernels.apply_rotary_embedding(xq2.to(freqs_cis.dtype), freqs_cis)
-    xk_out = kernels.apply_rotary_embedding(xk2.to(freqs_cis.dtype), freqs_cis)
-    xq_out = xq_out.permute(0, 2, 1, 3)
-    xk_out = xk_out.permute(0, 2, 1, 3)
+    # xq2 = xq.permute(0, 2, 1, 3).to(freqs_cis.dtype)
+    # xk2 = xk.permute(0, 2, 1, 3).to(freqs_cis.dtype)
+    xq_out = kernels.apply_rotary_embedding(xq.to(freqs_cis.dtype), freqs_cis)
+    xk_out = kernels.apply_rotary_embedding(xk.to(freqs_cis.dtype), freqs_cis)
+    # xq_out = xq_out.permute(0, 2, 1, 3)
+    # xk_out = xk_out.permute(0, 2, 1, 3)
     return xq_out.type_as(xq), xk_out.type_as(xk)
 
 

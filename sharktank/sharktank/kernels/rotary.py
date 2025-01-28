@@ -41,9 +41,9 @@ class apply_rotary_embedding(CustomOp):
 
         # Generate specialization signature and types.
         bs = input.type.shape[0]
-        sl = input.type.shape[1]
+        heads = input.type.shape[1]
+        sl = input.type.shape[2]
         sl = "D" if sl < 0 else sl
-        heads = input.type.shape[2]
         dims = input.type.shape[3]
 
         template_file = "rotary_embedding.mlir"
