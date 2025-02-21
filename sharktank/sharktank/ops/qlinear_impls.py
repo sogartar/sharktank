@@ -94,6 +94,27 @@ def qlinear_tensor_scaled(
     # Fall back to automatic fusion based on integer, high precision matmul.
     y_qs = _invoke_mmt_kernel(x_qs, weight_qs, accum_dtype=accum_dtype)
 
+    # y_qs_out_of_float8_e4m3fnuz_range_mask = torch.logical_or(y_qs < torch.finfo(torch.float8_e4m3fnuz).min, torch.finfo(torch.float8_e4m3fnuz).max < y_qs)
+    # y_qs_in_float8_e4m3fnuz_range_count = int(torch.logical_and(y_qs >= torch.finfo(torch.float8_e4m3fnuz).min, y_qs <= torch.finfo(torch.float8_e4m3fnuz).max).count_nonzero())
+    # y_qs_out_of_float8_e4m3fnuz_range_count = int(y_qs_out_of_float8_e4m3fnuz_range_mask.count_nonzero())
+    # y_qs_out_of_float8_e4m3fnuz_range_fraction = y_qs_out_of_float8_e4m3fnuz_range_count / y_qs.numel()
+    # assert y_qs_in_float8_e4m3fnuz_range_count + y_qs_out_of_float8_e4m3fnuz_range_count == y_qs.numel()
+    # y_qs_below_float8_e4m3fnuz_range_selected = torch.masked_select(y_qs, y_qs < torch.finfo(torch.float8_e4m3fnuz).min)
+    # y_qs_above_float8_e4m3fnuz_range_selected = torch.masked_select(y_qs, y_qs > torch.finfo(torch.float8_e4m3fnuz).max)
+    # y_qs_out_of_range_overrun = torch.cat(
+    #     ((y_qs_below_float8_e4m3fnuz_range_selected + torch.finfo(torch.float8_e4m3fnuz).min).abs(),
+    #     (y_qs_above_float8_e4m3fnuz_range_selected - torch.finfo(torch.float8_e4m3fnuz).max).abs(),)
+    # )
+    # statistics = [
+    #     y_qs_out_of_float8_e4m3fnuz_range_fraction,
+    #     y_qs_out_of_float8_e4m3fnuz_range_count,
+    #     float(y_qs_out_of_range_overrun.mean()),
+    #     float(y_qs_out_of_range_overrun.median()),
+    #     float(y_qs_out_of_range_overrun.max()),
+    #     float(y_qs_out_of_range_overrun.std()),
+    # ]
+    # print(f"y_qs out of range fraction, count, overrun mean, overrun median, overrun max, overrun std = {y_qs_out_of_float8_e4m3fnuz_range_fraction:5,.3f}, {y_qs_out_of_float8_e4m3fnuz_range_count:7}, {float(y_qs_out_of_range_overrun.mean()):.2e}, {float(y_qs_out_of_range_overrun.median()):.2e}, {float(y_qs_out_of_range_overrun.max()):.2e}, {float(y_qs_out_of_range_overrun.std()):.2e}")
+
     # Offset correction. By applying the offset correction in post, it is
     # set up to fuse with its consumer, which is already doing additional
     # activation manipulation. Whereas if applied before, it either blocks
