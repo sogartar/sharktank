@@ -567,18 +567,19 @@ class ResnetBlock2D(ThetaLayer):
 
     def forward(self, input_tensor: torch.Tensor, temb: torch.Tensor) -> torch.Tensor:
         hidden_states = input_tensor
-        hidden_states = self.norm1(hidden_states)
-        hidden_states = ops.elementwise(self.nonlinearity, hidden_states)
+        # hidden_states = self.norm1(hidden_states)
+        # hidden_states = ops.elementwise(self.nonlinearity, hidden_states)
         hidden_states = self.conv1(hidden_states)
 
-        if self.time_emb_proj is not None:
-            temb = ops.elementwise(self.nonlinearity, temb)
-            temb = self.time_emb_proj(temb)[:, :, None, None]
-            hidden_states = ops.elementwise(torch.add, hidden_states, temb)
+        # if self.time_emb_proj is not None:
+        #     temb = ops.elementwise(self.nonlinearity, temb)
+        #     temb = self.time_emb_proj(temb)[:, :, None, None]
+        #     hidden_states = ops.elementwise(torch.add, hidden_states, temb)
 
         hidden_states = self.norm2(hidden_states)
-        hidden_states = ops.elementwise(self.nonlinearity, hidden_states)
+        # hidden_states = ops.elementwise(self.nonlinearity, hidden_states)
         hidden_states = self.conv2(hidden_states)
+        return hidden_states
 
         if self.conv_shortcut is not None:
             input_tensor = self.conv_shortcut(input_tensor)

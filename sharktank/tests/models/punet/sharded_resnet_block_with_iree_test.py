@@ -168,6 +168,10 @@ def run_test_sharded_resnet_block_with_iree(
         temb_channels=input_time_emb_shape[1],
         time_embedding_norm="default",
     )
+    # input_image = torch.rand(
+    #     2, 12, 9, 11
+    # )
+    input_image = torch.rand(2, 6, 11, 13)
     sharded_input_image = ops.reshard_split(input_image, dim=1, count=shard_count)
     sharded_input_time_emb = ops.replicate(input_time_emb, count=shard_count)
     expected_result = sharded_resnet_block(sharded_input_image, sharded_input_time_emb)
