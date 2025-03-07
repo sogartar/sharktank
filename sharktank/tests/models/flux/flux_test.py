@@ -21,7 +21,7 @@ from sharktank.models.flux.export import (
 from sharktank.models.flux.testing import (
     convert_flux_transformer_input_for_hugging_face_model,
     export_dev_random_single_layer,
-    make_dev_single_layer_config,
+    make_toy_config,
     make_random_theta,
 )
 from sharktank.models.flux.flux import FluxModelV1, FluxParams
@@ -35,6 +35,7 @@ from sharktank.utils.iree import (
     flatten_for_iree_signature,
     iree_to_torch,
 )
+from sharktank.utils.logging import format_tensor_statistics
 from sharktank import ops
 from sharktank.transforms.dataset import set_float_dtype
 from sharktank.types import Dataset, Theta
@@ -96,6 +97,7 @@ class FluxTest(TempDirTestBase):
         target_theta = reference_model.theta.transform(
             functools.partial(set_float_dtype, dtype=target_dtype)
         )
+
         target_torch_model = FluxModelV1(
             theta=target_theta,
             params=reference_model.params,
@@ -177,9 +179,12 @@ class FluxTest(TempDirTestBase):
             for i in range(len(expected_outputs))
         ]
         logger.info("Comparing outputs...")
+        logger.info(f"Expected output {format_tensor_statistics(expected_outputs[0])}")
+        abs_diff = (actual_outputs[0] - expected_outputs[0]).abs()
+        logger.info(f"Abs diff {format_tensor_statistics(abs_diff[0])}")
         torch.testing.assert_close(actual_outputs, expected_outputs, atol=atol, rtol=0)
 
-    def runTestCompareDevIreeAgainstHuggingFace(
+    def runTestCompareDevIreeAgainstEager(
         self, reference_dtype: torch.dtype, target_dtype: torch.dtype, atol: float
     ):
         parameters_output_path = self._temp_dir / "parameters.irpa"
@@ -238,9 +243,34 @@ class FluxTest(TempDirTestBase):
 
         torch.testing.assert_close(target_output, reference_output, atol=atol, rtol=0)
 
+    def runTestCompareToyIreeAgainstEager(
+        self, reference_dtype: torch.dtype, target_dtype: torch.dtype, atol: float
+    ):
+        config = make_toy_config()
+        reference_theta = make_random_theta(config, dtype=reference_dtype)
+        reference_model = FluxModelV1(theta=reference_theta, params=config)
+        self.runCompareIreeAgainstTorchEager(
+            reference_model=reference_model, target_dtype=target_dtype, atol=atol
+        )
+
+    def testCompareToyIreeF32AgainstEagerF64(self):
+        """atol is apparently high because the expected output range is large.
+        Its absolute maximum is 3696."""
+        self.runTestCompareToyIreeAgainstEager(
+            reference_dtype=torch.float64, target_dtype=torch.float32, atol=1e-1
+        )
+
+    @pytest.mark.skip(
+        reason="Segmentation fault during output comparison. TODO: file issue"
+    )
+    def testCompareToyIreeF64AgainstEagerF64(self):
+        self.runTestCompareToyIreeAgainstEager(
+            reference_dtype=torch.float64, target_dtype=torch.float64, atol=1e-5
+        )
+
     @with_flux_data
-    def testCompareDevIreeF32AgainstHuggingFaceF32(self):
-        self.runTestCompareDevIreeAgainstHuggingFace(
+    def testCompareDevIreeF32AgainstEagerF32(self):
+        self.runTestCompareDevIreeAgainstEager(
             reference_dtype=torch.float32, target_dtype=torch.float32, atol=1e-2
         )
 
@@ -248,8 +278,8 @@ class FluxTest(TempDirTestBase):
         reason="Segmentation fault during output comparison. See https://github.com/nod-ai/shark-ai/issues/1050"
     )
     @with_flux_data
-    def testCompareDevIreeBf16AgainstHuggingFaceF32(self):
-        self.runTestCompareDevIreeAgainstHuggingFace(
+    def testCompareDevIreeBf16AgainstEagerF32(self):
+        self.runTestCompareDevIreeAgainstEager(
             reference_dtype=torch.float32, target_dtype=torch.bfloat16, atol=1
         )
 
