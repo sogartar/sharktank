@@ -1,0 +1,20 @@
+{
+  "model_type": "sharktank.models.clip.clip.ClipTextModel",
+  "mlir_path": "clip-bs1-bf16.mlir",
+  "export_parameters_path": "clip-bs1-bf16.irpa",
+  "iree_module_path": "clip-bs1-bf16-hip-gfx942.vmfb",
+  "compile_args": [
+    "--iree-hal-target-device=hip",
+    "--iree-hip-target=gfx942"
+  ],
+  "export_functions": [
+    {
+      "function": "forward",
+      "batch_sizes": [
+        1
+      ]
+    }
+  ],
+  "hugging_face_repo_id": "openai/clip-vit-large-patch14",
+  "dtype": "bf16"
+}
