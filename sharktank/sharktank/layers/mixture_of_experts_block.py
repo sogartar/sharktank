@@ -57,7 +57,7 @@ class MoeBlock(ThetaLayer):
             self.ffn_norm = RMSNormLayer(theta("ffn_norm"), epsilon=rms_epsilon)
 
         if "shared_experts" in theta:
-            self.shared_experts = FFN(theta("shared_experts"))
+            self.shared_experts = FFN(theta("shared_experts"), rms_epsilon=rms_epsilon)
 
         # Add optional FFN output norm layer
         if theta.optional_tensor("layer_output_norm") is not None:
@@ -93,6 +93,9 @@ class MoeBlock(ThetaLayer):
 
         if self.route_scale is not None:
             expert_gate = expert_gate * self.route_scale
+
+        # TODO: make this optional. Llama4 uses it.
+        expert_gate = expert_gate * torch.sigmoid(expert_gate.float()).to(h.dtype)
 
         moe_output = self.experts(ffn_input, top_k_experts, expert_gate)
 
