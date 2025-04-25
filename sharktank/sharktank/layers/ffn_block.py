@@ -30,7 +30,7 @@ class FFN(ThetaLayer):
         activation_fn: Callable[[AnyTensor], AnyTensor] = F.silu,
         activation_dtype: Optional[torch.dtype] = torch.float16,
         fake_quant: bool = False,
-        add_residual: bool = False,
+        add_residual: bool = True,
     ):
         super().__init__(theta)
 

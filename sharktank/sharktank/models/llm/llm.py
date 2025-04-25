@@ -305,9 +305,9 @@ class AttentionFFNBlock(ThetaLayer):
                 True,
             ),
             "llama4": (
-                ops.identity,
+                torch.nn.functional.sigmoid,
                 activation_fn,
-                config.ffn_add_residual,
+                True,
                 False,
             ),
         }

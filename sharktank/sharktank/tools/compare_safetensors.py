@@ -14,6 +14,7 @@ import json
 import matplotlib.pyplot as plt
 import sys
 import torch
+import yaml
 
 
 class Reporter:
@@ -137,8 +138,8 @@ def main(argv):
         type=Path,
         default=None,
         help=(
-            "Path to json file that maps an name of expected tensors to name of actual tensors. "
-            'E.g. {"a": "b", "c": "d"}'
+            "Path to JSON or YAML file that maps an name of expected tensors to name "
+            'of actual tensors. E.g. {"a": "b", "c": "d"}'
         ),
     )
     parser.add_argument(
@@ -151,9 +152,13 @@ def main(argv):
 
     expected_actual_to_key_map: dict[str, str] = {}
     if args.keys_map_path is not None:
-        with open(args.keys_map_path, "r") as f:
-            expected_actual_to_key_map = json.load(f)
-            assert isinstance(expected_actual_to_key_map, dict)
+        keys_map_path: Path = args.keys_map_path
+        with open(keys_map_path, "r") as f:
+            if keys_map_path.suffix == ".json":
+                expected_actual_to_key_map = json.load(f)
+            else:
+                expected_actual_to_key_map = yaml.safe_load(f)
+        assert isinstance(expected_actual_to_key_map, dict)
 
     reporter = Reporter(args.dir)
     try:

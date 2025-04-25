@@ -29,12 +29,25 @@ class PreGatherFFNMOE(ThetaLayer):
 
         super().__init__(theta)
 
+        # (num_experts, expert_feature_dim, feature_dim)
         self.ffn_gate = theta.tensor("ffn_gate_exps", "weight")
+
+        # (num_experts, expert_feature_dim, feature_dim)
         self.ffn_up = theta.tensor("ffn_up_exps", "weight")
+
+        # (num_experts, feature_dim, expert_feature_dim)
         self.ffn_down = theta.tensor("ffn_down_exps", "weight")
+
         self.activation = activation
 
-    def pre_matmul_gather(self, inputs, weights, experts, einstring="mk,menk->men"):
+    def pre_matmul_gather(
+        self,
+        inputs: torch.Tensor,
+        weights: torch.Tensor,
+        # (batch_size * sequence_length, num_top_experts)
+        experts: torch.Tensor,
+        einstring="mk,menk->men",
+    ):
         inputs = inputs[:, :]
         weights = weights[experts, :, :]
         matmul = einsum_2args(inputs, weights, einstring)
@@ -42,19 +55,29 @@ class PreGatherFFNMOE(ThetaLayer):
 
     def forward(
         self,
-        h: torch.Tensor,
-        experts: torch.Tensor,
-        expert_gate: torch.Tensor,
+        h: torch.Tensor,  # (bs * sl, feature_dim)
+        experts: torch.Tensor,  # (bs * sl, num_top_experts)
+        expert_gate: torch.Tensor,  # (bs * sl, num_top_experts)
     ):
+        # bs: batch_size
+        # sl: sequence_length
+
+        # (bs * sl, num_top_experts, expert_feature_dim)
         ffn_gate = self.pre_matmul_gather(h, self.ffn_gate, experts)
+        ffn_gate = einsum_2args(expert_gate, ffn_gate, "me,men->men")
         ffn_gate = elementwise(self.activation, ffn_gate)
 
+        # (bs * sl, num_top_experts, expert_feature_dim)
         ffn_up = self.pre_matmul_gather(h, self.ffn_up, experts)
+        ffn_up = einsum_2args(expert_gate, ffn_up, "me,men->men")
+
+        # (bs * sl, num_top_experts, feature_dim)
         ffn_down = self.pre_matmul_gather(
             ffn_gate * ffn_up, self.ffn_down, experts, einstring="mek,menk->men"
         )
-        ffn_down = einsum_2args(expert_gate, ffn_down, "me,men->men")
-        return torch.sum(ffn_down, dim=1)
+        # (bs * sl, num_top_experts, feature_dim)
+        # ffn_down = einsum_2args(expert_gate, ffn_down, "me,men->men")
+        return torch.sum(ffn_down, dim=1)  # (bs * sl, feature_dim)
 
 
 class FFNMOE(ThetaLayer):
