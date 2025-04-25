@@ -113,7 +113,6 @@ class MoeBlock(ThetaLayer):
         # shape: (batch_size * sequence_length, expert_count)
         router_logits = self.ffn_gate_inp(ffn_input)
         router_weights = self.score_experts(router_logits.to(torch.float))
-        # router_weights = router_logits
 
         # Select top k experts from router weights
         # shape: (batch_size * sequence_length, expert_used_count)
@@ -128,7 +127,6 @@ class MoeBlock(ThetaLayer):
 
         if self.route_scale is not None:
             expert_gate = expert_gate * self.route_scale
-        expert_gate = torch.ones_like(expert_gate)
 
         # shape: (batch_size * sequence_length, feature_dim)
         moe_output = self.experts(ffn_input, top_k_experts, expert_gate)
@@ -137,11 +135,12 @@ class MoeBlock(ThetaLayer):
             moe_output = moe_output + self.shared_experts(ffn_input)
 
         moe_output = moe_output.reshape(batch_size, sequence_length, feature_dim)
-
-        moe_output = self.layer_output_norm(moe_output)
         ###############################################################################
 
-        torch.testing.assert_close(moe_output, hf_moe_output, atol=1e-2, rtol=1e-2)
+        torch.testing.assert_close(moe_output, hf_moe_output, atol=1e-3, rtol=1e-2)
+        moe_output = hf_moe_output
+
+        moe_output = self.layer_output_norm(moe_output)
 
         if self.add_residual:
             moe_output = h + moe_output
@@ -174,13 +173,17 @@ class Llama4TextMoe(torch.nn.Module):
 
     def forward(self, hidden_states):
         batch, seq_len, hidden_dim = hidden_states.shape
+        # (tokens_per_expert, hidden_dim)
         hidden_states = hidden_states.view(-1, self.hidden_dim)
+        # (num_experts, tokens_per_expert)
         router_logits = self.router(hidden_states).transpose(0, 1)
         tokens_per_expert = batch * seq_len
 
+        # (tokens_per_expert, top_k)
         router_top_value, router_indices = torch.topk(
             router_logits.transpose(0, 1), self.top_k, dim=1
         )
+        # (num_experts, tokens_per_expert)
         router_scores = (
             torch.full_like(router_logits.transpose(0, 1), float("-inf"))
             .scatter_(1, router_indices, router_top_value)
@@ -195,15 +198,20 @@ class Llama4TextMoe(torch.nn.Module):
         )
         router_scores = torch.sigmoid(router_scores.float()).to(hidden_states.dtype)
 
+        # (num_experts * tokens_per_expert, hidden_dim)
         router_indices = router_indices.reshape(-1, 1).expand(-1, hidden_dim)
+        # (num_experts * tokens_per_expert, hidden_dim)
         routed_in = torch.gather(
             input=hidden_states,
             dim=0,
             index=router_indices,
         ).to(hidden_states.device)
         # we gather inputs corresponding to each expert based on the router indices
+        # (num_experts * tokens_per_expert, hidden_dim)
         routed_in = routed_in * router_scores.reshape(-1, 1)
+        # (num_experts * tokens_per_expert, hidden_dim)
         routed_out = self.experts(routed_in)
+        # (tokens_per_expert, hidden_dim)
         out = self.shared_expert(hidden_states)
         # now that we finished expert computation -> we scatter add because we gathered previously
         # we have to do this because we used all experts on all tokens. This is faster than the for loop, tho you are compute bound
@@ -244,9 +252,13 @@ class Llama4TextExperts(torch.nn.Module):
         Returns:
             torch.Tensor
         """
+        # (num_experts, tokens_per_expert, hidden_size)
         hidden_states = hidden_states.view(self.num_experts, -1, self.hidden_size)
+        # (num_experts, tokens_per_expert, expert_dim * 2)
         gate_up = torch.bmm(hidden_states, self.gate_up_proj)
+        # (num_experts, tokens_per_expert, expert_dim)
         gate, up = gate_up.chunk(2, dim=-1)  # not supported for DTensors
+        # (num_experts, tokens_per_expert, hidden_size)
         next_states = torch.bmm((up * self.act_fn(gate)), self.down_proj)
         next_states = next_states.view(-1, self.hidden_size)
         return next_states

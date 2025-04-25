@@ -24,7 +24,7 @@ def config_to_hugging_face_text_config(config: LlamaModelConfig) -> Llama4TextCo
     }
     # Hugging Face hardcodes RoPE layers.
     assert list(config.rope_layers) == [
-        int((i + 1) % 4 != 0) for i in range(config.hp.block_count)
+        i for i in range(config.hp.block_count) if int((i + 1) % 4 != 0)
     ]
     return Llama4TextConfig(
         vocab_size=config.vocabulary_size,
@@ -114,7 +114,7 @@ def make_toy_model_config(dtype: torch.dtype) -> LlamaModelConfig:
     attn_head_dim = rope_dimension_count
     block_seq_stride = 13
     block_count = 4
-    rope_layers = [int((i + 1) % 4 != 0) for i in range(block_count)]
+    rope_layers = [i for i in range(block_count) if int((i + 1) % 4 != 0)]
     expert_feed_forward_length = 29
     return LlamaModelConfig(
         hp=LlamaHParams(

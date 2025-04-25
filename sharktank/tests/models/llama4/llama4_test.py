@@ -31,7 +31,9 @@ class Llama4Test(TempDirTestBase):
         ]
     )
     def testCompareToyEagerVsHuggingFace(self, dtype: torch.dtype, atol: float):
-        torch.set_printoptions(linewidth=88, threshold=1000, edgeitems=3, sci_mode=True)
+        torch.set_printoptions(
+            linewidth=120, threshold=1000, edgeitems=4, precision=2, sci_mode=True
+        )
 
         config = make_toy_model_config(dtype=dtype)
         theta = make_random_llama_theta(config, dtype=dtype)
@@ -97,3 +99,43 @@ class Llama4Test(TempDirTestBase):
             "hf_trace.safetensors", skip_unsupported_dtypes=True
         )
         intermediates_saver.save_file("trace.safetensors", skip_unsupported_dtypes=True)
+
+    def test_moe(self):
+        from sharktank.layers.testing import make_random_moe_block_theta
+        from sharktank.layers import MoeBlock
+
+        dtype = torch.float32
+        feature_dim = 7
+        expert_hidden_dim = 3
+        num_experts = 5
+        expert_used_count = 2
+        num_shared_experts = 11
+        shared_expert_hidden_dim = 13
+        batch_size = 17
+        sequence_length = 19
+
+        theta = make_random_moe_block_theta(
+            in_dim=feature_dim,
+            expert_hidden_dim=expert_hidden_dim,
+            num_experts=num_experts,
+            with_ffn_norm=True,
+            num_shared_experts=num_shared_experts,
+            shared_expert_hidden_dim=shared_expert_hidden_dim,
+            with_layer_output_norm=True,
+            dtype=dtype,
+        )
+
+        moe_block = MoeBlock(
+            theta=theta,
+            expert_used_count=expert_used_count,
+            rms_epsilon=0.01,
+            moe_activation=torch.nn.functional.silu,
+            score_experts=torch.nn.functional.sigmoid,
+            normalize_experts=False,
+            add_residual=False,
+        )
+
+        input = (
+            torch.rand([batch_size, sequence_length, feature_dim], dtype=dtype) - 0.5
+        )
+        moe_block(input)

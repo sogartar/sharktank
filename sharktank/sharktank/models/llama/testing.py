@@ -135,6 +135,7 @@ def make_attention_moe_block_random_theta(
         with_ffn_norm=False,
         num_shared_experts=config.hp.expert_shared_count,
         shared_expert_hidden_dim=config.hp.expert_shared_feed_forward_length,
+        with_layer_output_norm=False,
         dtype=dtype,
     )
     res_dict.update(moe_theta.tree)
@@ -159,6 +160,7 @@ def make_random_llama_theta(
     for i in range(config.hp.block_count):
         is_moe_block = i in config.moe_layers
         if is_moe_block:
+            # This is used in Llama 4.
             block = make_attention_moe_block_random_theta(
                 config=config, block_idx=i, dtype=dtype
             ).tree
