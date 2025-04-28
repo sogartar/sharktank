@@ -15,6 +15,9 @@ import matplotlib.pyplot as plt
 import sys
 import torch
 import yaml
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Reporter:
@@ -59,9 +62,14 @@ class Reporter:
 
         if expected.shape != actual.shape:
             print_line(
-                f" Shape mismatch {expected.shape} (expected) != {actual.shape} (expected).",
+                f" Shape mismatch {expected.shape} (expected) != {actual.shape} (actual).",
                 color="red",
             )
+            logger.warning(
+                f"Shape mismatch for {name}: {expected.shape} (expected) != {actual.shape} (actual)."
+            )
+            if expected.numel() != actual.numel():
+                return
 
         exp_flat = expected.flatten().to(torch.float32)
         act_flat = actual.flatten().to(torch.float32)

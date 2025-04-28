@@ -49,6 +49,8 @@ def config_to_hugging_face_text_config(config: LlamaModelConfig) -> Llama4TextCo
         attn_temperature_tuning=config.attn_temperature_tuning,
         floor_scale=config.floor_scale,
         attn_scale=config.attn_scale,
+        # attn_implementation="eager",
+        attn_implementation="flex_attention",
     )
 
 
@@ -110,7 +112,10 @@ def make_toy_model_config(dtype: torch.dtype) -> LlamaModelConfig:
     attention_head_count_kv = 4
     attention_head_count = attention_head_count_kv * 5
     vocabulary_size = 19
-    rope_dimension_count = 7 * 2
+
+    # When comparing with Hugging Face, its Flex attention requires a power 2.
+    rope_dimension_count = 4 * 2
+
     attn_head_dim = rope_dimension_count
     block_seq_stride = 13
     block_count = 4

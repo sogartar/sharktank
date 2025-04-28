@@ -143,7 +143,7 @@ class BaseCausalLMModel(ThetaLayer):
         ).to(dtype)
         return numeric_mask.to(self.device)
 
-    def chunk_attention_mask(self, attention_mask: torch.Tensor):
+    def chunk_attention_mask(self, attention_mask: torch.Tensor) -> torch.Tensor:
         """Apply a chunked attention mask onto a mask."""
         batch_seq_len = attention_mask.shape[2]
         # TODO: handle decode step
@@ -158,11 +158,11 @@ class BaseCausalLMModel(ThetaLayer):
 
         return torch.where(
             chunked_boolean_attention_mask,
+            attention_mask,
             torch.tensor(
                 self._maximally_negative_value(attention_mask.dtype),
                 dtype=attention_mask.dtype,
             ),
-            attention_mask,
         )
 
     def create_boolean_chunked_attention_mask(
@@ -179,10 +179,10 @@ class BaseCausalLMModel(ThetaLayer):
         '?'         :  5 ⬚ ⬚ ⬚ ■ ■ ■     |
 
         If the chunk size is 3.
-        This can just be appplied over the already created attention mask
+        This can just be applied over the already created attention mask
 
-        ⬚ - masked (True).
-        ■ - unmasked (False).
+        ⬚ - masked (False).
+        ■ - unmasked (True).
         """
         arange_vector = torch.arange(start_index, end_index)
         block_pos = torch.abs(
@@ -190,7 +190,7 @@ class BaseCausalLMModel(ThetaLayer):
             - arange_vector.unsqueeze(1) // attention_chunk_size
         )
         token_pos = arange_vector.unsqueeze(0) - arange_vector.unsqueeze(1)
-        mask = (block_pos != 0) | (token_pos > 0)
+        mask = (block_pos == 0) & (token_pos <= 0)
         return mask
 
     def extract_tokens_from_logits(

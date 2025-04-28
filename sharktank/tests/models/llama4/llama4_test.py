@@ -73,11 +73,15 @@ class Llama4Test(TempDirTestBase):
         hf_intermediates_saver = SaveModuleResultTensorsPatch(with_before_forward=True)
         hf_intermediates_saver.patch_child_modules(hf_model)
 
-        hf_output = hf_model(
-            input_ids=input_ids,
-            attention_mask=hf_2d_attention_mask,
-            past_key_values=hf_past_key_values,
-        )
+        @torch.compiler.disable(recursive=True)
+        def run_hf_model():
+            return hf_model(
+                input_ids=input_ids,
+                attention_mask=hf_2d_attention_mask,
+                past_key_values=hf_past_key_values,
+            )
+
+        hf_output = run_hf_model()
 
         page_count = (len(input_ids[0]) // config.block_seq_stride) * batch_size
         kv_cache_state = model.cache.allocate(page_count)
