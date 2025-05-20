@@ -176,10 +176,13 @@ class PagedLlmModelV1(BaseCausalLMModel):
                 cache_state=cache_state,
                 seq_block_ids=seq_block_ids[pipeline],
             )
+            # return h # good on IREE 3.5.0rc20250519 bad on 3.5.0rc20250515
+            break  # bad
             h = self._inter_layer_callback(h, block_idx)
             self.trace_tensor(f"llama.attn_block.{block_idx}.output", h)
 
         h = self.output_norm(h)
+        # return h # good with 1 block
         logits = self.output_lm_head(h)
 
         if self.inference_norm:
@@ -409,9 +412,15 @@ class AttentionFFNBlock(ThetaLayer):
             embedding_batch_mask=embedding_batch_mask,
             cache_state=cache_state,
         )
+        # return h # good
 
         # Feed forward network.
         final_output = self.ffn(self.ffn_norm(h))
+
+        if isinstance(final_output, ShardedTensor):
+            return ops.replicate(final_output, count=final_output.shard_count)  # bad
+        else:
+            return final_output
 
         if self.add_residual:
             final_output = h + final_output

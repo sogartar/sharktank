@@ -249,6 +249,13 @@ class PagedLlamaAttentionBlock(ThetaLayer):
             x, start_index, embedding, embedding_batch_mask
         )
 
+        # good
+        # if isinstance(xq, ShardedTensor):
+        #     xq = ops.replicate(xq, count=xq.shard_count)
+        #     xk = ops.replicate(xk, count=xk.shard_count)
+        #     xv = ops.replicate(xv, count=xv.shard_count)
+        # return ops.cat([xq[:,:,:, 0:2], xk[:,:,:, 0:2], xv[:,:,:, 0:4]], dim=-1).reshape(xq.shape[0], xq.shape[1], 32)
+
         # Used by fp8_e4m3fnuz model
         if self.cache_quantizer is not None:
             if not self.fake_quant:
@@ -306,6 +313,11 @@ class PagedLlamaAttentionBlock(ThetaLayer):
             attn_output = attn_output.flatten(2)
         else:
             attn_output = attn_output.flatten(2, 3)
+
+        # bad
+        # if isinstance(attn_output, ShardedTensor):
+        #     attn_output = ops.replicate(attn_output, count=attn_output.shard_count)
+        # return attn_output[:, :, 0:h.shape[2]]
 
         # Project.
         attn_output = self.attn_output(attn_output)

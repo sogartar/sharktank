@@ -626,6 +626,15 @@ class PagedAttention:
             page_ids=seq_block_ids,
         )
 
+        # bad
+        if isinstance(q, ShardedTensor):
+            q = ops.replicate(q, count=q.shard_count)
+            k = ops.replicate(k, count=k.shard_count)
+            v = ops.replicate(v, count=v.shard_count)
+        return ops.cat(
+            [q[:, :, :, 0:64], k[:, :, :, 0:64], v[:, :, :, 0:64]], dim=-1
+        ).transpose(1, 2)
+
         return self.attention(
             q=q,
             k=k,
