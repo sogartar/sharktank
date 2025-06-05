@@ -96,6 +96,11 @@ def main():
 
     model = PagedLlmModelV1(dataset.root_theta, llama_config)
 
+    import sharktank.utils.debugging
+
+    sharktank.utils.debugging.flags.enable_tensor_trace = True
+    model.set_recursively_submodules_default_trace_tensor_key_prefix()
+
     def generate_params_json(
         hp: LlamaHParams,
         prefill_bs: list[int],

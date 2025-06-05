@@ -39,11 +39,11 @@ class DeepseekTest(TempDirTestBase):
         )
 
         self.enable_tensor_trace_stash = debugging.flags.enable_tensor_trace
-        # debugging.flags.enable_tensor_trace = True
+        debugging.flags.enable_tensor_trace = True
 
         self.trace_path_stash = debugging.flags.trace_path
         debugging.flags.trace_path = Path(
-            "/home/alvasile/repos/shark-ai/sharktank/logits"
+            "/home/bpetkant/ws/sharktank/experiments/deepseek/tensor-tracing/eager"
         )
 
     def tearDown(self):
@@ -103,6 +103,7 @@ class DeepseekTest(TempDirTestBase):
         dataset = Dataset.load(dataset_path)
 
         reference_model = PagedLlmModelV1(theta=theta, config=config)
+        reference_model.set_recursively_submodules_default_trace_tensor_key_prefix()
         reference_generator = TorchGenerator(reference_model)
         reference_batch = reference_generator.begin_batch(
             token_ids=token_ids,
@@ -162,6 +163,9 @@ class DeepseekTest(TempDirTestBase):
 
         def run_iree_module(iree_devices: list[iree.runtime.HalDevice]):
             cpu_device = get_iree_devices(driver="local-task", device_count=1)
+            debugging.flags.trace_path = (
+                "/home/bpetkant/ws/sharktank/experiments/deepseek/tensor-tracing/eager"
+            )
             iree_buffere_view_trace_callback = (
                 make_hal_buffer_view_trace_default_callback(cpu_device[0])
             )
