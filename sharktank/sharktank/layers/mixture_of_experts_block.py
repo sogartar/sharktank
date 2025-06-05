@@ -135,6 +135,12 @@ class MoeBlock(ThetaLayer):
         h: torch.Tensor | ShardedTensor,
     ):
         batch_size, sequence_length, feature_dim = h.shape
+        bla = h.reshape(h.shape[0] * h.shape[1], h.shape[2])
+        # self.trace_tensor("h", h)
+        self.trace_tensor("bla", bla)
+        # from iree.turbine.ops.iree import transfer_to_logical_device
+        # transfer_to_logical_device("1", bla)
+
         ffn_input = h.view(-1, feature_dim)
 
         # For each token, the router calculates the router weights for all experts

@@ -157,7 +157,7 @@ class DenseFFNMOE(ThetaLayer):
             like=h,
         )
         self.trace_tensor("top_experts_index", top_experts_index)
-        self.trace_tensor("expert_gate", expert_gate)
+        # self.trace_tensor("expert_gate", expert_gate)
         # (self.num_experts, num_tokens)
         router_scores = router_scores.scatter_(
             1, top_experts_index, expert_gate
@@ -169,7 +169,7 @@ class DenseFFNMOE(ThetaLayer):
         # weighted_scores = one_hot_expert_indices * expert_gate.unsqueeze(-1)
         # router_scores = weighted_scores.sum(dim=1).transpose(0, 1)
 
-        self.trace_tensor("router_scores", router_scores)
+        # self.trace_tensor("router_scores", router_scores)
 
         # (self.num_experts, num_tokens)
         router_indices = (

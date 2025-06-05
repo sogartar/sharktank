@@ -183,7 +183,7 @@ class PagedLlmModelV1(BaseCausalLMModel):
         self._assert_device(*cache_state, dtype=self.activation_dtype)
 
         h = self.token_embedding(tokens)
-        self.trace_tensor("llama.token_embedding", h)
+        # self.trace_tensor("llama.token_embedding", h)
 
         # TODO: Get the normalization factor via configuration
         if self.inference_norm:
@@ -201,8 +201,8 @@ class PagedLlmModelV1(BaseCausalLMModel):
 
         # Iterate over attention blocks.
         for block_idx, block in enumerate(self.attn_blocks):
-            if block_idx == 0:
-                self.trace_tensor(f"llama.attn_block.{block_idx}.input", h)
+            # if block_idx == 0:
+            #    self.trace_tensor(f"llama.attn_block.{block_idx}.input", h)
             use_chunked_attention = (
                 self.config.chunked_attention_layers is not None
                 and block_idx in self.config.chunked_attention_layers
@@ -221,7 +221,7 @@ class PagedLlmModelV1(BaseCausalLMModel):
                 seq_block_ids=seq_block_ids[pipeline],
             )
             h = self._inter_layer_callback(h, block_idx)
-            self.trace_tensor(f"llama.attn_block.{block_idx}.output", h)
+            # self.trace_tensor(f"llama.attn_block.{block_idx}.output", h)
 
         # h = self.output_norm(h)
         # logits = self.output_lm_head(h)
@@ -283,10 +283,10 @@ class PagedLlmModelV1(BaseCausalLMModel):
             )
             embedding_batch_masks.append(mask)
             # TODO: How to name and trace this properly
-            self.trace_tensor("llama.embedding_batch_mask", mask)
+            # self.trace_tensor("llama.embedding_batch_mask", mask)
 
         h = self.token_embedding(tokens)
-        self.trace_tensor("llama.token_embedding", h)
+        # self.trace_tensor("llama.token_embedding", h)
 
         # TODO: Get the normalization factor via configuration
         if self.inference_norm:
@@ -294,8 +294,8 @@ class PagedLlmModelV1(BaseCausalLMModel):
 
         # Iterate over attention blocks.
         for block_idx, block in enumerate(self.attn_blocks):
-            if block_idx == 0:
-                self.trace_tensor(f"llama.attn_block.{block_idx}.input", h)
+            # if block_idx == 0:
+            #    self.trace_tensor(f"llama.attn_block.{block_idx}.input", h)
             # TODO: Hacky, shouldn't need to read info out of self.cache
             pipeline = self.cache.block_to_pipeline_map[block_idx]
             h = block(  # TODO: Should we index into attention_mask and cache here?
@@ -308,7 +308,7 @@ class PagedLlmModelV1(BaseCausalLMModel):
                 seq_block_ids=seq_block_ids[pipeline],
             )
             h = self._inter_layer_callback(h, block_idx)
-            self.trace_tensor(f"llama.attn_block.{block_idx}.output", h)
+            # self.trace_tensor(f"llama.attn_block.{block_idx}.output", h)
 
         h = self.output_norm(h)
         logits = self.output_lm_head(h)

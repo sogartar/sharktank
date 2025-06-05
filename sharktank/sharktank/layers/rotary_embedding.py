@@ -204,12 +204,12 @@ class RotaryEmbeddingLayer(BaseLayer):
         Returns:
           Tensor of [bs, sl, 1, d] that will be later passed to apply_batch_mask.
         """
-        self.trace_tensor("rope.start_positions", start_positions)
+        # self.trace_tensor("rope.start_positions", start_positions)
         positions_seq = torch.arange(0, batch_seq_len, device=self.device).unsqueeze(
             0
         ) + start_positions.unsqueeze(1)
         # Broadcast lookup to [b, ...].
-        self.trace_tensor("rope.positions_seq", positions_seq)
+        # self.trace_tensor("rope.positions_seq", positions_seq)
         if self.use_hf:
             assert self.use_table, "use_hf requires use_table"
             freqs_cis = self.rotary_embed_table
