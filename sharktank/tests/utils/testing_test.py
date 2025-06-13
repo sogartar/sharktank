@@ -6,44 +6,182 @@
 
 import pytest
 
-from sharktank.utils.testing import xfail, XfailMatchError
+from sharktank.utils.testing import xfail
+
+pytest_plugins = "pytester"
 
 
-def test_xfail_with_successful_match():
+def test_strict_xfail_with_successful_match(pytester: pytest.Pytester):
+    pytester.makepyfile(
+        """
+    from sharktank.utils.testing import xfail
+
     @xfail(raises=RuntimeError, strict=True, match="test_xfail_with_successful_match")
-    def f():
+    def test_f():
         raise RuntimeError("test_xfail_with_successful_match")
+    """
+    )
 
-    with pytest.raises(RuntimeError, match="test_xfail_with_successful_match"):
-        f()
+    result = pytester.runpytest()
+    result.assert_outcomes(xfailed=1)
 
 
-def test_xfail_with_failed_match():
+def test_strict_xfail_with_failed_match(pytester: pytest.Pytester):
+    pytester.makepyfile(
+        """
+    from sharktank.utils.testing import xfail
+
     @xfail(raises=RuntimeError, strict=True, match="string_that_can_not_be_found")
-    def f():
+    def test_f():
         raise RuntimeError("test_xfail_with_failed_match")
+    """
+    )
 
-    with pytest.raises(
-        XfailMatchError,
-        match='Failed to match error "test_xfail_with_failed_match" '
-        'against expected match "string_that_can_not_be_found"',
-    ):
-        f()
+    result = pytester.runpytest()
+    result.assert_outcomes(failed=1)
 
 
-def test_xfail_without_match():
+def test_non_strict_xfail_with_failed_match(pytester: pytest.Pytester):
+    pytester.makepyfile(
+        """
+    from sharktank.utils.testing import xfail
+
+    @xfail(raises=RuntimeError, strict=False, match="string_that_can_not_be_found")
+    def test_f():
+        raise RuntimeError("test_xfail_with_failed_match")
+    """
+    )
+
+    result = pytester.runpytest()
+    result.assert_outcomes(xfailed=1)
+
+
+def test_strict_xfail_without_match(pytester: pytest.Pytester):
+    pytester.makepyfile(
+        """
+    from sharktank.utils.testing import xfail
+
     @xfail(raises=RuntimeError, strict=True)
-    def f():
+    def test_f():
         raise RuntimeError("test_xfail_without_match")
+    """
+    )
 
-    with pytest.raises(RuntimeError, match="test_xfail_without_match"):
-        f()
+    result = pytester.runpytest()
+    result.assert_outcomes(xfailed=1)
 
 
-def test_xfail_match_with_multiple_lines_in_exception_string():
+def test_strict_xfail_with_wrong_exception(pytester: pytest.Pytester):
+    pytester.makepyfile(
+        """
+    from sharktank.utils.testing import xfail
+
+    @xfail(raises=RuntimeError, strict=True)
+    def test_f():
+        raise ValueError("")
+    """
+    )
+
+    result = pytester.runpytest()
+    result.assert_outcomes(failed=1)
+
+
+def test_strict_xfail_match_with_multiple_lines_in_exception_string(
+    pytester: pytest.Pytester,
+):
+    pytester.makepyfile(
+        """
+    from sharktank.utils.testing import xfail
+
     @xfail(raises=RuntimeError, strict=True, match="line2")
-    def f():
-        raise RuntimeError("line1\nline2\nline3")
+    def test_f():
+        raise RuntimeError("line1\\nline2\\nline3")
+    """
+    )
 
-    with pytest.raises(RuntimeError, match="line1\nline2\nline3"):
-        f()
+    result = pytester.runpytest()
+    result.assert_outcomes(xfailed=1)
+
+
+def test_multiple_strict_xfails_with_successful_match(pytester: pytest.Pytester):
+    pytester.makepyfile(
+        """
+    from sharktank.utils.testing import xfail
+
+    @xfail(raises=ValueError, strict=True, match="match")
+    @xfail(raises=ValueError, strict=True, match="match")
+    def test_f():
+        raise ValueError("match")
+    """
+    )
+
+    result = pytester.runpytest()
+    result.assert_outcomes(xfailed=1)
+
+
+def test_strict_xfail_with_successful_match_and_false_condition(
+    pytester: pytest.Pytester,
+):
+    pytester.makepyfile(
+        """
+    from sharktank.utils.testing import xfail
+
+    @xfail(condition=False, raises=ValueError, reason="", strict=True, match="match")
+    def test_f():
+        raise ValueError("match")
+    """
+    )
+
+    result = pytester.runpytest()
+    result.assert_outcomes(failed=1)
+
+
+def test_strict_xfail_with_failed_match_and_true_condition(pytester: pytest.Pytester):
+    pytester.makepyfile(
+        """
+    from sharktank.utils.testing import xfail
+
+    @xfail(condition=True, raises=ValueError, reason="", strict=True, match="not a match")
+    def test_f():
+        raise ValueError("match")
+    """
+    )
+
+    result = pytester.runpytest()
+    result.assert_outcomes(failed=1)
+
+
+def test_multiple_strict_xfails_with_failed_match_and_false_condition_in_first_xfail(
+    pytester: pytest.Pytester,
+):
+    pytester.makepyfile(
+        """
+    from sharktank.utils.testing import xfail
+
+    @xfail(condition=True, raises=ValueError, reason="", strict=True, match="match")
+    @xfail(condition=False, raises=ValueError, reason="", strict=True, match="not a match")
+    def test_f():
+        raise ValueError("match")
+    """
+    )
+
+    result = pytester.runpytest()
+    result.assert_outcomes(xfailed=1)
+
+
+def test_multiple_strict_xfails_with_failed_match_and_true_condition_in_first_xfail(
+    pytester: pytest.Pytester,
+):
+    pytester.makepyfile(
+        """
+    from sharktank.utils.testing import xfail
+
+    @xfail(condition=True, raises=ValueError, reason="", strict=True, match="match")
+    @xfail(condition=True, raises=ValueError, reason="", strict=True, match="not a match")
+    def test_f():
+        raise ValueError("match")
+    """
+    )
+
+    result = pytester.runpytest()
+    result.assert_outcomes(xfailed=1)

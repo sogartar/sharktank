@@ -355,6 +355,14 @@ def get_model_artifacts(request: FixtureRequest):
     return model_path
 
 
+# @pytest.fixture(scope="session")
+# def get_xfail_strict(request):
+#     """Fixture to access config options."""
+#     def _get_option():
+#         return request.config.getoption("xfail_strict")
+#     return _get_option
+
+
 @pytest.fixture(scope="class")
 def get_iree_flags(request: FixtureRequest):
     model_path = {}
