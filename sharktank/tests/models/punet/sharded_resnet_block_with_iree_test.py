@@ -7,9 +7,8 @@
 import gc
 import iree.compiler
 import iree.runtime
-import pytest
 import re
-import tempfile
+import sys
 import torch
 
 from pathlib import Path
@@ -116,6 +115,7 @@ def run_test_toy_size_sharded_resnet_block_with_iree(artifacts_dir: Path):
 
 
 @xfail(
+    condition=(sys.platform != "win32"),
     raises=iree.compiler.CompilerToolError,
     reason=(
         "The compiler crashes."
@@ -123,6 +123,13 @@ def run_test_toy_size_sharded_resnet_block_with_iree(artifacts_dir: Path):
     ),
     strict=True,
     match=re.escape(r"Error code: -11"),
+)
+@xfail(
+    condition=(sys.platform == "win32"),
+    raises=iree.compiler.CompilerToolError,
+    reason=("Compiler error: operation's operand is unlinked"),
+    strict=True,
+    match=re.escape(r"error: operation's operand is unlinked"),
 )
 def test_toy_size_sharded_resnet_block_with_iree(tmp_path: Path):
     """Test sharding, exportation and execution with IREE local-task of a Resnet block.
